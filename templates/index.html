@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>RoiChat CleanList — Higienizador de Listas</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #0d0d14;
+    --surface: #13131f;
+    --surface2: #1c1c2e;
+    --border: #2e2e45;
+    --accent: #00e5a0;
+    --accent-dim: rgba(0,229,160,.12);
+    --purple: #7c6af7;
+    --danger: #ff4d6d;
+    --warn: #ffa940;
+    --text: #e2e2f0;
+    --muted: #7070a0;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Inter', sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  .page { max-width: 1100px; margin: 0 auto; padding: 0 24px 60px; }
+
+  header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 24px 0 32px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 40px;
+  }
+  .logo-hex {
+    width: 40px; height: 40px; background: var(--accent);
+    clip-path: polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 15px; color: #000; flex-shrink: 0;
+  }
+  .logo-name { font-size: 20px; font-weight: 700; letter-spacing: -.3px; }
+  .logo-name em { color: var(--accent); font-style: normal; }
+  .logo-tag { font-size: 12px; color: var(--muted); font-family: var(--mono); margin-left: auto; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px 30px;
+    margin-bottom: 20px;
+  }
+  .card.highlighted { border-color: var(--accent); }
+  .card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+  .step-badge {
+    width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700; font-family: var(--mono);
+    background: var(--accent); color: #000;
+  }
+  .step-badge.done { background: var(--surface2); color: var(--accent); border: 1.5px solid var(--accent); }
+  .step-badge.dim  { background: var(--surface2); color: var(--muted);  border: 1.5px solid var(--border); }
+  .card-title { font-size: 17px; font-weight: 600; }
+
+  .dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 10px; padding: 44px 20px; text-align: center;
+    cursor: pointer; position: relative; transition: border-color .2s, background .2s;
+  }
+  .dropzone:hover, .dropzone.drag { border-color: var(--accent); background: var(--accent-dim); }
+  .dropzone input[type=file] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+  }
+  .dz-icon { font-size: 36px; margin-bottom: 10px; }
+  .dz-title { font-size: 15px; font-weight: 600; margin-bottom: 5px; }
+  .dz-sub { font-size: 13px; color: var(--muted); font-family: var(--mono); }
+  .file-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--accent-dim); border: 1px solid var(--accent);
+    color: var(--accent); border-radius: 8px; padding: 8px 14px;
+    font-size: 13px; font-family: var(--mono); margin-top: 14px;
+  }
+
+  .divider { height: 1px; background: var(--border); margin: 22px 0; }
+  .field-label {
+    font-size: 12px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .6px; margin-bottom: 8px;
+  }
+
+  .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  @media (max-width: 600px) { .row-2 { grid-template-columns: 1fr; } }
+  .field-group { display: flex; flex-direction: column; }
+
+  select.fsel {
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--sans); font-size: 14px;
+    padding: 10px 36px 10px 12px; border-radius: 8px; outline: none;
+    appearance: none; cursor: pointer; transition: border-color .15s;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237070a0' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center;
+  }
+  select.fsel:focus { border-color: var(--accent); }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 13px; border-radius: 20px;
+    border: 1.5px solid var(--border); background: var(--surface2);
+    font-size: 13px; font-family: var(--mono);
+    cursor: pointer; user-select: none; transition: all .15s; color: var(--muted);
+  }
+  .chip:hover { border-color: var(--purple); color: var(--text); }
+  .chip.on { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
+  .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+
+  .toggle-row {
+    display: inline-flex; align-items: center; gap: 12px;
+    padding: 12px 16px; border-radius: 10px;
+    background: var(--surface2); border: 1px solid var(--border);
+    cursor: pointer; transition: border-color .15s;
+  }
+  .toggle-row:hover { border-color: var(--accent); }
+  .toggle-row label { font-size: 14px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+  .toggle-row label span { color: var(--accent); font-family: var(--mono); font-size: 13px; }
+  .sw { position: relative; width: 42px; height: 22px; flex-shrink: 0; }
+  .sw input { opacity: 0; width: 0; height: 0; }
+  .sw-track {
+    position: absolute; inset: 0; border-radius: 22px;
+    background: var(--surface); border: 1.5px solid var(--border);
+    transition: .2s; cursor: pointer;
+  }
+  .sw-track::before {
+    content: ''; position: absolute; width: 14px; height: 14px; border-radius: 50%;
+    background: var(--muted); top: 2px; left: 2px; transition: .2s;
+  }
+  .sw input:checked ~ .sw-track { background: rgba(0,229,160,.15); border-color: var(--accent); }
+  .sw input:checked ~ .sw-track::before { transform: translateX(20px); background: var(--accent); }
+
+  .btn {
+    padding: 11px 24px; border-radius: 8px; border: none;
+    font-family: var(--sans); font-size: 14px; font-weight: 600;
+    cursor: pointer; transition: all .15s; display: inline-flex; align-items: center; gap: 7px;
+  }
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-primary:hover:not(:disabled) { filter: brightness(1.1); transform: translateY(-1px); box-shadow: 0 4px 20px rgba(0,229,160,.25); }
+  .btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-ghost { background: transparent; border: 1.5px solid var(--border); color: var(--text); }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-danger:hover { filter: brightness(1.1); }
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
+
+  .spin {
+    width: 16px; height: 16px; border-radius: 50%;
+    border: 2px solid rgba(0,229,160,.25); border-top-color: var(--accent);
+    animation: rot .6s linear infinite; flex-shrink: 0;
+  }
+  @keyframes rot { to { transform: rotate(360deg); } }
+
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 22px; }
+  @media (max-width: 600px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+  .stat {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 16px;
+  }
+  .stat-val { font-size: 26px; font-weight: 700; font-family: var(--mono); color: var(--accent); line-height: 1; }
+  .stat-key { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  .warn-box {
+    background: rgba(255,169,64,.07); border: 1px solid rgba(255,169,64,.25);
+    border-radius: 10px; padding: 14px 18px; margin-bottom: 20px;
+    max-height: 180px; overflow: hidden; display: flex; flex-direction: column;
+  }
+  .warn-box-title { font-size: 13px; font-weight: 600; color: var(--warn); margin-bottom: 8px; flex-shrink: 0; }
+  .warn-box ul { padding-left: 18px; overflow-y: auto; flex: 1; }
+  .warn-box li { font-size: 12px; font-family: var(--mono); color: var(--warn); line-height: 1.7; }
+
+  /* Tab switcher for preview */
+  .preview-tabs {
+    display: flex; border-bottom: 1px solid var(--border); margin-bottom: 16px;
+  }
+  .preview-tab {
+    padding: 10px 22px; font-size: 13px; font-weight: 500; cursor: pointer;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+    color: var(--muted); transition: all .15s; user-select: none;
+  }
+  .preview-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; font-family: var(--mono); }
+  thead th {
+    background: var(--surface2); color: var(--accent);
+    padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border);
+    white-space: nowrap; font-weight: 500;
+  }
+  tbody td {
+    padding: 9px 14px; border-bottom: 1px solid rgba(46,46,69,.5);
+    white-space: nowrap; color: var(--text);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: rgba(255,255,255,.025); }
+  .rows-note { font-size: 12px; color: var(--muted); font-family: var(--mono); margin-top: 8px; }
+
+  .dl-box {
+    background: linear-gradient(120deg, rgba(0,229,160,.06), rgba(124,106,247,.06));
+    border: 1px solid rgba(0,229,160,.2);
+    border-radius: 12px; padding: 26px 28px; margin-top: 24px;
+  }
+  .dl-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+  .fmt-row { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+  .fmt-pill {
+    padding: 7px 16px; border-radius: 20px;
+    border: 1.5px solid var(--border); background: var(--surface2);
+    font-size: 13px; font-family: var(--mono); color: var(--muted);
+    cursor: pointer; transition: all .15s;
+  }
+  .fmt-pill.on { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+  .modal-bg {
+    position: fixed; inset: 0; background: rgba(0,0,0,.65); backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 200; opacity: 0; pointer-events: none; transition: opacity .2s;
+  }
+  .modal-bg.open { opacity: 1; pointer-events: auto; }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 36px; max-width: 420px; width: 90%;
+    transform: translateY(16px); transition: transform .2s;
+  }
+  .modal-bg.open .modal { transform: translateY(0); }
+  .modal h2 { font-size: 18px; font-weight: 700; margin-bottom: 10px; }
+  .modal p { color: var(--muted); font-size: 14px; line-height: 1.65; margin-bottom: 24px; }
+  .modal-btns { display: flex; gap: 10px; }
+
+  .misplaced-item {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 12px 14px; border-radius: 8px;
+    background: var(--surface2); border: 1px solid var(--border);
+    margin-bottom: 8px; cursor: pointer; transition: border-color .15s;
+  }
+  .misplaced-item:hover { border-color: var(--accent); }
+  .misplaced-item.checked { border-color: var(--accent); background: var(--accent-dim); }
+  .misplaced-item input[type=checkbox] { margin-top: 2px; accent-color: var(--accent); flex-shrink:0; }
+  .misplaced-meta { font-size: 12px; color: var(--muted); font-family: var(--mono); margin-top: 3px; }
+  .misplaced-name { font-size: 14px; font-weight: 500; }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <div class="logo-hex">RC</div>
+    <div class="logo-name">RoiChat<em> Clean List</em></div>
+    <div class="logo-tag">Higienizador de listas v1.1</div>
+  </header>
+
+  <!-- STEP 1 -->
+  <div class="card highlighted" id="step1">
+    <div class="card-header">
+      <div class="step-badge" id="b1">1</div>
+      <div class="card-title">Enviar arquivo</div>
+    </div>
+    <div class="dropzone" id="dropzone">
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv,.pdf"/>
+      <div class="dz-icon">📂</div>
+      <div class="dz-title">Solte o arquivo aqui ou clique para selecionar</div>
+      <div class="dz-sub">Suporta: .xlsx · .xls · .csv · .pdf</div>
+    </div>
+    <div id="fileBadge" class="hidden"></div>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="card" id="step2">
+    <div class="card-header">
+      <div class="step-badge dim" id="b2">2</div>
+      <div class="card-title">Configurar colunas</div>
+    </div>
+
+    <div class="row-2">
+      <div class="field-group">
+        <div class="field-label">👤 Coluna de Nome</div>
+        <select class="fsel" id="nameCol"><option value="">— não mapear —</option></select>
+      </div>
+      <div class="field-group">
+        <div class="field-label">📞 Coluna de Telefone</div>
+        <select class="fsel" id="phoneCol"><option value="">— não mapear —</option></select>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="field-label" style="margin-bottom:12px">Colunas para manter no arquivo final</div>
+    <div class="chips" id="colChips"></div>
+
+    <div class="divider"></div>
+
+    <div class="toggle-row" onclick="toggleSplit()">
+      <label for="splitNames">
+        Dividir nome em <span>first_name</span> e <span>last_name</span>
+      </label>
+      <label class="sw" onclick="event.stopPropagation()">
+        <input type="checkbox" id="splitNames" checked/>
+        <span class="sw-track"></span>
+      </label>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btnProcess" disabled onclick="doProcess()">
+        ⚡ Processar lista
+      </button>
+    </div>
+
+    <div id="progressWrap" style="display:none; margin-top:20px;">
+      <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+        <span id="progressMsg" style="font-size:13px; color:var(--muted); font-family:var(--mono);">Aguardando…</span>
+        <span id="progressPct" style="font-size:13px; font-family:var(--mono); color:var(--accent);">0%</span>
+      </div>
+      <div style="background:var(--surface2); border:1px solid var(--border); border-radius:20px; overflow:hidden; height:8px;">
+        <div id="progressBar" style="height:100%; width:0%; background:var(--accent); border-radius:20px; transition:width .4s ease;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 3 -->
+  <div class="card hidden" id="step3">
+    <div class="card-header">
+      <div class="step-badge dim" id="b3">3</div>
+      <div class="card-title">Resultado & Download</div>
+    </div>
+
+    <div class="stats" id="statsBar"></div>
+    <div id="warnBox"></div>
+
+    <div class="preview-tabs">
+      <div class="preview-tab active" id="tabBefore" onclick="switchTab('before')">📄 Antes (original)</div>
+      <div class="preview-tab" id="tabAfter" onclick="switchTab('after')">✅ Depois (higienizado)</div>
+    </div>
+
+    <div id="panelBefore">
+      <div class="table-wrap" id="tblBefore"></div>
+      <div class="rows-note" id="noteBefore"></div>
+    </div>
+    <div id="panelAfter" class="hidden">
+      <div class="table-wrap" id="tblAfter"></div>
+      <div class="rows-note" id="noteAfter"></div>
+    </div>
+
+    <div class="dl-box">
+      <div class="dl-title">⬇ Baixar arquivo higienizado</div>
+      <div class="fmt-row">
+        <div class="fmt-pill on" data-fmt="xlsx" onclick="setFmt(this)">📊 XLSX</div>
+        <div class="fmt-pill" data-fmt="csv" onclick="setFmt(this)">📄 CSV</div>
+      </div>
+      <button class="btn btn-primary" onclick="doDownload()">Baixar agora</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- Misplaced phones modal -->
+<div class="modal-bg" id="misplacedModal">
+  <div class="modal" style="max-width:600px">
+    <h2>📍 Telefones em colunas erradas</h2>
+    <p>Encontramos números de telefone em outras colunas nas linhas abaixo. Marque os que deseja usar:</p>
+    <div id="misplacedList" style="max-height:320px; overflow-y:auto; margin-bottom:20px;"></div>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="resolveMisplaced(false)">Ignorar todos</button>
+      <button class="btn btn-primary" onclick="resolveMisplaced(true)">Usar selecionados</button>
+    </div>
+  </div>
+</div>
+
+<!-- Dup modal -->
+<div class="modal-bg" id="dupModal">
+  <div class="modal">
+    <h2>🔁 Duplicatas encontradas</h2>
+    <p id="dupMsg"></p>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="resolveDup('keep')">Manter todas</button>
+      <button class="btn btn-danger" onclick="resolveDup('remove')">Remover duplicadas</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let selectedCols = new Set();
+let lastConfig = {};
+let dupResolve = null;
+let misplacedResolve = null;
+let pendingMisplaced = [];
+let downloadFmt = 'xlsx';
+
+// ── File upload ──
+const dzEl   = document.getElementById('dropzone');
+const fileEl = document.getElementById('fileInput');
+
+dzEl.addEventListener('dragover', e => { e.preventDefault(); dzEl.classList.add('drag'); });
+dzEl.addEventListener('dragleave', () => dzEl.classList.remove('drag'));
+dzEl.addEventListener('drop', e => {
+  e.preventDefault(); dzEl.classList.remove('drag');
+  if (e.dataTransfer.files[0]) { fileEl.files = e.dataTransfer.files; onFile(); }
+});
+fileEl.addEventListener('change', onFile);
+
+async function onFile() {
+  const f = fileEl.files[0];
+  if (!f) return;
+
+  const badge = document.getElementById('fileBadge');
+  badge.innerHTML = '<div class="file-badge"><span class="spin"></span> Lendo arquivo…</div>';
+  badge.classList.remove('hidden');
+
+  let data;
+  try {
+    const fd = new FormData();
+    fd.append('file', f);
+    const res = await fetch('/upload', { method: 'POST', body: fd });
+    data = await res.json();
+  } catch (e) {
+    badge.innerHTML = '<div class="file-badge" style="border-color:var(--danger);color:var(--danger)">✗ Erro de conexão com o servidor</div>';
+    return;
+  }
+
+  if (data.error) {
+    badge.innerHTML = `<div class="file-badge" style="border-color:var(--danger);color:var(--danger)">✗ ${data.error}</div>`;
+    return;
+  }
+
+  badge.innerHTML =
+    `<div class="file-badge">✓ ${f.name} — ${data.total_rows} linhas · ${data.columns.length} colunas</div>`;
+
+  buildColumnConfig(data.columns);
+
+  activate('step1', false);
+  activate('step2', true);
+  document.getElementById('b1').classList.add('done');
+  document.getElementById('b1').textContent = '✓';
+  document.getElementById('b2').classList.remove('dim');
+  document.getElementById('btnProcess').disabled = false;
+}
+
+function buildColumnConfig(cols) {
+  const nameEl  = document.getElementById('nameCol');
+  const phoneEl = document.getElementById('phoneCol');
+  nameEl.innerHTML  = '<option value="">— não mapear —</option>';
+  phoneEl.innerHTML = '<option value="">— não mapear —</option>';
+
+  cols.forEach(c => {
+    nameEl.innerHTML  += `<option value="${c}">${c}</option>`;
+    phoneEl.innerHTML += `<option value="${c}">${c}</option>`;
+  });
+
+  // Auto-detect
+  cols.forEach(c => {
+    const lc = c.toLowerCase().replace(/\s/g, '');
+    if (/nome|name/.test(lc))                          nameEl.value  = c;
+    if (/tel|fone|phone|cel|numero|número|núm/.test(lc)) phoneEl.value = c;
+  });
+
+  // Chips — real file columns only, all selected by default
+  selectedCols = new Set(cols);
+  const wrap = document.getElementById('colChips');
+  wrap.innerHTML = '';
+  cols.forEach(c => {
+    const el = document.createElement('div');
+    el.className = 'chip on';
+    el.dataset.col = c;
+    el.innerHTML = `<span class="dot"></span><span>${c}</span>`;
+    el.addEventListener('click', () => {
+      el.classList.toggle('on');
+      if (el.classList.contains('on')) selectedCols.add(c);
+      else selectedCols.delete(c);
+    });
+    wrap.appendChild(el);
+  });
+}
+
+// ── Process ──
+async function doProcess() {
+  const btn = document.getElementById('btnProcess');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> Processando…';
+  setProgress(0, 'Iniciando…');
+
+  const cfg = buildConfig('keep');
+  const res = await streamProcess(cfg);
+
+  btn.disabled = false;
+  btn.innerHTML = '⚡ Processar lista';
+  hideProgress();
+
+  if (!res) return;
+  if (res.error) { alert('Erro: ' + res.error); return; }
+
+  // Show results immediately, then check for misplaced phones
+  if (res.misplaced && res.misplaced.length > 0) {
+    showMisplacedModal(res.misplaced, async (fixes) => {
+      if (fixes.length > 0) {
+        const cfg2 = {...lastConfig, phone_fixes: fixes};
+        const btnEl = document.getElementById('btnProcess');
+        btnEl.disabled = true;
+        btnEl.innerHTML = '<span class="spin"></span> Reprocessando…';
+        setProgress(0, 'Aplicando telefones corrigidos…');
+        const r2 = await streamProcess(cfg2);
+        btnEl.disabled = false;
+        btnEl.innerHTML = '⚡ Processar lista';
+        hideProgress();
+        if (r2 && !r2.error) showResults(r2);
+      }
+    });
+  }
+
+  if (res.dup_count > 0) {
+    document.getElementById('dupMsg').textContent =
+      `Foram encontradas ${res.dup_count} linha(s) duplicada(s). O que deseja fazer?`;
+    document.getElementById('dupModal').classList.add('open');
+    dupResolve = async (action) => {
+      document.getElementById('dupModal').classList.remove('open');
+      lastConfig = buildConfig(action);
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spin"></span> Processando…';
+      setProgress(0, 'Reprocessando…');
+      const r2 = await streamProcess(lastConfig);
+      btn.disabled = false;
+      btn.innerHTML = '⚡ Processar lista';
+      hideProgress();
+      if (r2 && !r2.error) showResults(r2);
+    };
+  } else {
+    lastConfig = cfg;
+    showResults(res);
+  }
+}
+
+let _progressTimer = null;
+let _currentPct = 0;
+
+function setProgress(pct, msg) {
+  document.getElementById('progressWrap').style.display = 'block';
+  document.getElementById('progressMsg').textContent = msg;
+
+  // Animate smoothly toward target, never exceeding it
+  if (_progressTimer) clearInterval(_progressTimer);
+  const target = pct;
+  _progressTimer = setInterval(() => {
+    if (_currentPct < target) {
+      _currentPct = Math.min(_currentPct + 0.8, target);
+      document.getElementById('progressBar').style.width = _currentPct + '%';
+      document.getElementById('progressPct').textContent = Math.floor(_currentPct) + '%';
+    }
+    if (_currentPct >= target && target < 100) {
+      // Creep slowly toward 95% while waiting for server
+      if (_currentPct < 95) _currentPct += 0.05;
+      document.getElementById('progressBar').style.width = _currentPct + '%';
+      document.getElementById('progressPct').textContent = Math.floor(_currentPct) + '%';
+    }
+    if (_currentPct >= 100) clearInterval(_progressTimer);
+  }, 30);
+}
+
+function hideProgress() {
+  if (_progressTimer) clearInterval(_progressTimer);
+  _currentPct = 0;
+  document.getElementById('progressWrap').style.display = 'none';
+  document.getElementById('progressBar').style.width = '0%';
+  document.getElementById('progressPct').textContent = '0%';
+}
+
+function streamProcess(cfg) {
+  return new Promise((resolve) => {
+    const fd = new FormData();
+    fd.append('file', fileEl.files[0]);
+    fd.append('config', JSON.stringify(cfg));
+
+    fetch('/process_stream', { method: 'POST', body: fd })
+      .then(res => {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        function read() {
+          reader.read().then(({ done, value }) => {
+            if (done) { resolve(null); return; }
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+            for (const line of lines) {
+              if (!line.startsWith('data:')) continue;
+              try {
+                const payload = JSON.parse(line.slice(5).trim());
+                if (payload.error) { resolve(payload); return; }
+                setProgress(payload.pct, payload.msg);
+                if (payload.pct === 100 && payload.data) {
+                  resolve(payload.data);
+                  return;
+                }
+              } catch {}
+            }
+            read();
+          });
+        }
+        read();
+      })
+      .catch(e => { alert('Erro de conexão: ' + e); resolve(null); });
+  });
+}
+
+function buildConfig(dupAction) {
+  return {
+    name_col:    document.getElementById('nameCol').value  || null,
+    phone_col:   document.getElementById('phoneCol').value || null,
+    split_names: document.getElementById('splitNames').checked,
+    dup_action:  dupAction,
+    keep_cols:   [...selectedCols],
+  };
+}
+
+function resolveDup(action) { if (dupResolve) dupResolve(action); }
+
+function showMisplacedModal(items, callback) {
+  misplacedResolve = callback;
+  pendingMisplaced = items;
+  const list = document.getElementById('misplacedList');
+  list.innerHTML = items.map((item, i) => `
+    <div class="misplaced-item" id="mi_${i}" onclick="toggleMisplaced(${i})">
+      <input type="checkbox" id="mc_${i}" checked onchange="event.stopPropagation(); toggleMisplaced(${i}, this.checked)"/>
+      <div>
+        <div class="misplaced-name">${item.name}</div>
+        <div class="misplaced-meta">
+          Coluna: <strong>${item.found_col}</strong> &nbsp;·&nbsp;
+          Valor: <strong>${item.found_value}</strong> &nbsp;·&nbsp;
+          Normalizado: <strong>${item.normalized}</strong>
+        </div>
+      </div>
+    </div>
+  `).join('');
+  // mark all checked by default
+  items.forEach((_, i) => document.getElementById('mi_' + i).classList.add('checked'));
+  document.getElementById('misplacedModal').classList.add('open');
+}
+
+function toggleMisplaced(i, checked) {
+  const cb = document.getElementById('mc_' + i);
+  const el = document.getElementById('mi_' + i);
+  if (checked === undefined) checked = !cb.checked;
+  cb.checked = checked;
+  el.classList.toggle('checked', checked);
+}
+
+function resolveMisplaced(useSelected) {
+  document.getElementById('misplacedModal').classList.remove('open');
+  if (!misplacedResolve) return;
+  const fixes = useSelected
+    ? pendingMisplaced.filter((_, i) => document.getElementById('mc_' + i).checked)
+        .map(item => ({ row_index: item.row_index, normalized: item.normalized }))
+    : [];
+  misplacedResolve(fixes);
+  misplacedResolve = null;
+}
+
+// ── Results ──
+function showResults(data) {
+  const s3 = document.getElementById('step3');
+  s3.classList.remove('hidden');
+  activate('step3', true);
+  document.getElementById('b3').classList.remove('dim');
+
+  document.getElementById('statsBar').innerHTML = `
+    <div class="stat"><div class="stat-val">${data.total_before}</div><div class="stat-key">Linhas originais</div></div>
+    <div class="stat"><div class="stat-val">${data.total_after}</div><div class="stat-key">Linhas higienizadas</div></div>
+    <div class="stat"><div class="stat-val">${data.dup_count}</div><div class="stat-key">Duplicatas</div></div>
+    <div class="stat"><div class="stat-val">${data.warnings.length}</div><div class="stat-key">Avisos</div></div>
+  `;
+
+  const wb = document.getElementById('warnBox');
+  wb.innerHTML = data.warnings.length
+    ? `<div class="warn-box"><div class="warn-box-title">⚠ ${data.warnings.length} aviso(s)</div>
+       <ul>${data.warnings.map(w => `<li>${w}</li>`).join('')}</ul></div>`
+    : '';
+
+  // BEFORE: shows original file columns + original data
+  buildTable('tblBefore', data.columns_before, data.preview_before);
+  document.getElementById('noteBefore').textContent =
+    `Mostrando ${data.preview_before.length} de ${data.total_before} linhas`;
+
+  // AFTER: shows processed columns + processed data
+  buildTable('tblAfter', data.columns_after, data.preview_after);
+  document.getElementById('noteAfter').textContent =
+    `Mostrando ${data.preview_after.length} de ${data.total_after} linhas`;
+
+  switchTab('before');
+  s3.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function buildTable(id, cols, rows) {
+  const ths = cols.map(c => `<th>${c}</th>`).join('');
+  const trs = rows.map(r =>
+    '<tr>' + cols.map(c => `<td>${r[c] ?? ''}</td>`).join('') + '</tr>'
+  ).join('');
+  document.getElementById(id).innerHTML =
+    `<table><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
+}
+
+function switchTab(which) {
+  document.getElementById('panelBefore').classList.toggle('hidden', which !== 'before');
+  document.getElementById('panelAfter').classList.toggle('hidden',  which !== 'after');
+  document.getElementById('tabBefore').classList.toggle('active', which === 'before');
+  document.getElementById('tabAfter').classList.toggle('active',  which === 'after');
+}
+
+// ── Download ──
+async function doDownload() {
+  const fd = new FormData();
+  fd.append('file', fileEl.files[0]);
+  fd.append('config', JSON.stringify(lastConfig));
+  fd.append('format', downloadFmt);
+  const res  = await fetch('/download', { method: 'POST', body: fd });
+  const blob = await res.blob();
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = `lista_higienizada.${downloadFmt}`; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function setFmt(el) {
+  document.querySelectorAll('.fmt-pill').forEach(p => p.classList.remove('on'));
+  el.classList.add('on');
+  downloadFmt = el.dataset.fmt;
+}
+
+function activate(id, on) {
+  document.getElementById(id).classList.toggle('highlighted', on);
+}
+function toggleSplit() {
+  const cb = document.getElementById('splitNames');
+  cb.checked = !cb.checked;
+}
+</script>
+</body>
+</html>
