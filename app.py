@@ -1,11 +1,18 @@
 import io
+import os
 import re
 import json
-from flask import Flask, request, jsonify, send_file, render_template, Response
+import uuid
+from collections import OrderedDict
+from flask import Flask, request, jsonify, send_file, render_template, Response, stream_with_context
 import pandas as pd
 import numpy as np
 
 app = Flask(__name__)
+UPLOAD_CACHE_MAX = 8
+RESULT_CACHE_MAX = 16
+UPLOAD_CACHE = OrderedDict()
+RESULT_CACHE = OrderedDict()
 
 # ─── Phone helpers ─────────────────────────────────────────────────────────────
 
@@ -52,6 +59,142 @@ def split_name(full: str):
     return parts[0].capitalize(), ' '.join(p.capitalize() for p in parts[1:])
 
 
+def infer_phone_column(df: pd.DataFrame) -> str | None:
+    best_col = None
+    best_score = 0.0
+
+    for col in df.columns:
+        series = df[col].fillna('').astype(str).str.strip()
+        sample = series[series.ne('')].head(200)
+        if sample.empty:
+            continue
+
+        phone_hits = sample.apply(lambda val: looks_like_phone(val) is not None).sum()
+        score = phone_hits / len(sample)
+
+        if phone_hits >= 2 and score > best_score:
+            best_col = col
+            best_score = score
+
+    return best_col if best_score >= 0.35 else None
+
+
+def infer_name_column(df: pd.DataFrame, phone_col: str | None = None) -> str | None:
+    best_col = None
+    best_score = 0.0
+
+    for col in df.columns:
+        if phone_col and col == phone_col:
+            continue
+
+        series = df[col].fillna('').astype(str).str.strip()
+        sample = series[series.ne('')].head(200)
+        if sample.empty:
+            continue
+
+        def _looks_like_name(val: str) -> bool:
+            if looks_like_phone(val):
+                return False
+            cleaned = re.sub(r'[^A-Za-zÀ-ÿ\s]', ' ', str(val)).strip()
+            parts = [p for p in cleaned.split() if p]
+            if len(parts) < 2:
+                return False
+            letters = re.sub(r'[^A-Za-zÀ-ÿ]', '', cleaned)
+            return len(letters) >= 5
+
+        name_hits = sample.apply(_looks_like_name).sum()
+        score = name_hits / len(sample)
+
+        if name_hits >= 2 and score > best_score:
+            best_col = col
+            best_score = score
+
+    return best_col if best_score >= 0.3 else None
+
+
+def infer_columns(df: pd.DataFrame) -> dict:
+    phone_col = infer_phone_column(df)
+    name_col = infer_name_column(df, phone_col)
+    return {
+        'name_col': name_col,
+        'phone_col': phone_col,
+    }
+
+
+def build_download_name(original_name: str, fmt: str) -> str:
+    base_name = os.path.basename(original_name or 'arquivo')
+    root, _ = os.path.splitext(base_name)
+    root = root or 'arquivo'
+    ext = 'csv' if fmt == 'csv' else 'xlsx'
+    return f'{root}_higienizado.{ext}'
+
+
+def _cache_put(cache: OrderedDict, key: str, value: dict, max_size: int) -> None:
+    if key in cache:
+        cache.pop(key)
+    cache[key] = value
+    while len(cache) > max_size:
+        cache.popitem(last=False)
+
+
+def store_uploaded_dataframe(filename: str, df: pd.DataFrame) -> str:
+    token = uuid.uuid4().hex
+    _cache_put(UPLOAD_CACHE, token, {'filename': filename, 'df': df}, UPLOAD_CACHE_MAX)
+    return token
+
+
+def get_uploaded_dataframe(token: str) -> dict | None:
+    cached = UPLOAD_CACHE.get(token)
+    if not cached:
+        return None
+    UPLOAD_CACHE.move_to_end(token)
+    return cached
+
+
+def build_result_cache_key(upload_token: str | None, filename: str, config: dict) -> str | None:
+    if not upload_token:
+        return None
+    config_key = json.dumps(config, sort_keys=True, ensure_ascii=False)
+    return f'{upload_token}:{filename}:{config_key}'
+
+
+def store_processed_result(cache_key: str | None, result: dict) -> None:
+    if not cache_key:
+        return
+    _cache_put(RESULT_CACHE, cache_key, result, RESULT_CACHE_MAX)
+
+
+def get_processed_result(cache_key: str | None) -> dict | None:
+    if not cache_key:
+        return None
+    cached = RESULT_CACHE.get(cache_key)
+    if not cached:
+        return None
+    RESULT_CACHE.move_to_end(cache_key)
+    return cached
+
+
+def load_dataframe_from_request(req) -> tuple[pd.DataFrame, str, str | None]:
+    upload_token = req.form.get('upload_token')
+    if upload_token:
+        cached = get_uploaded_dataframe(upload_token)
+        if cached:
+            return cached['df'], cached['filename'], upload_token
+
+    file = req.files.get('file')
+    if not file:
+        raise ValueError('Nenhum arquivo enviado')
+
+    df = read_file(file).fillna('')
+    return df, file.filename, None
+
+
+def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    cleaned = df.fillna('').astype(str).replace({'nan': '', 'None': '', '<NA>': ''})
+    cleaned = cleaned.apply(lambda col: col.str.strip())
+    return cleaned.loc[cleaned.ne('').any(axis=1)].reset_index(drop=True)
+
+
 # ─── File reading ──────────────────────────────────────────────────────────────
 
 def read_file(file) -> pd.DataFrame:
@@ -87,30 +230,52 @@ def read_file(file) -> pd.DataFrame:
 
 def detect_misplaced_phones(df: pd.DataFrame, phone_col: str, keep_cols: list) -> list:
     """
-    For rows where phone_col is empty, scan other columns for phone-like values.
+    For rows where phone_col is empty or invalid, scan other columns for phone-like values.
     Returns list of dicts: {row_index, name, found_col, found_value, normalized}
     """
+    if phone_col not in df.columns:
+        return []
+
     suggestions = []
     other_cols = [c for c in df.columns if c != phone_col]
+    phone_series = df[phone_col].fillna('').astype(str).str.strip()
+    pending_rows = phone_series.map(lambda val: looks_like_phone(val) is None)
+    if not pending_rows.any():
+        return []
 
-    for idx, row in df.iterrows():
-        phone_val = str(row.get(phone_col, '')).strip()
-        if phone_val and phone_val.lower() not in ('nan', ''):
-            continue  # already has phone
-        for col in other_cols:
-            val = str(row.get(col, '')).strip()
-            if not val or val.lower() in ('nan', ''):
-                continue
-            normalized = looks_like_phone(val)
-            if normalized:
-                suggestions.append({
-                    'row_index':  int(idx),
-                    'name':       str(row.get(list(df.columns)[0], f'Linha {idx+2}')),
-                    'found_col':  col,
-                    'found_value': val,
-                    'normalized': normalized,
-                })
-                break  # one suggestion per row
+    name_series = df.iloc[:, 0].fillna('').astype(str)
+    found_frames = []
+    for col in other_cols:
+        candidate_values = df.loc[pending_rows, col].fillna('').astype(str).str.strip()
+        if candidate_values.empty:
+            continue
+
+        normalized = candidate_values.map(looks_like_phone)
+        matched = normalized.notna()
+        if not matched.any():
+            continue
+
+        matched_index = candidate_values.index[matched]
+        found_frames.append(pd.DataFrame({
+            'row_index': matched_index.astype(int),
+            'name': name_series.loc[matched_index].where(
+                name_series.loc[matched_index].str.strip().ne(''),
+                [f'Linha {idx+2}' for idx in matched_index]
+            ),
+            'found_col': col,
+            'found_value': candidate_values.loc[matched_index].values,
+            'normalized': normalized.loc[matched_index].values,
+        }))
+        pending_rows.loc[matched_index] = False
+        if not pending_rows.any():
+            break
+
+    if found_frames:
+        suggestions = (
+            pd.concat(found_frames, ignore_index=True)
+            .sort_values('row_index')
+            .to_dict(orient='records')
+        )
     return suggestions
 
 
@@ -122,23 +287,31 @@ def process_dataframe(df: pd.DataFrame, config: dict) -> dict:
     split_names   = config.get('split_names', True)
     dup_action    = config.get('dup_action', 'keep')
     keep_cols     = config.get('keep_cols', list(df.columns))
-    # List of {row_index, normalized} accepted by user
-    phone_fixes   = {int(f['row_index']): f['normalized']
-                     for f in config.get('phone_fixes', [])}
+    # List of accepted misplaced phones from the UI
+    phone_fixes   = {
+        int(f['row_index']): {
+            'normalized': f.get('normalized', ''),
+            'found_col':  f.get('found_col'),
+        }
+        for f in config.get('phone_fixes', [])
+        if 'row_index' in f
+    }
 
     warnings = []
 
-    # Convert everything to string
-    df = df.astype(str).replace({'nan': '', 'None': '', '<NA>': ''})
-    df = df.apply(lambda col: col.str.strip())
-    df = df[df.apply(lambda r: r.str.strip().any(), axis=1)]
-    df = df.reset_index(drop=True)
+    df = clean_dataframe(df)
 
     # Apply accepted phone fixes before processing
     if phone_col and phone_fixes:
-        for row_idx, norm_phone in phone_fixes.items():
+        for row_idx, fix in phone_fixes.items():
             if row_idx in df.index:
+                norm_phone = normalize_phone(re.sub(r'[^\d]', '', str(fix.get('normalized', ''))))
+                if not norm_phone:
+                    continue
                 df.at[row_idx, phone_col] = norm_phone
+                found_col = fix.get('found_col')
+                if found_col and found_col in df.columns and found_col != phone_col:
+                    df.at[row_idx, found_col] = ''
 
     # ── Handle multiple phones per row (explode) ──
     if phone_col and phone_col in df.columns:
@@ -160,7 +333,8 @@ def process_dataframe(df: pd.DataFrame, config: dict) -> dict:
         for idx in df[bad_mask].index:
             warnings.append(f'Linha {idx+2}: telefone inválido "{df["_phones"][idx]}"')
 
-        df[phone_col] = normalized.where(~normalized.isna(), df['_phones'])
+        # Keep only normalized phones in the final file.
+        df[phone_col] = normalized.fillna('')
         df = df.drop(columns=['_phones'])
 
     # ── Select columns ──
@@ -172,9 +346,11 @@ def process_dataframe(df: pd.DataFrame, config: dict) -> dict:
         name_series = result[name_col].astype(str).str.strip()
         result[name_col] = name_series
         if split_names:
-            split = name_series.apply(split_name)
-            result.insert(result.columns.get_loc(name_col) + 1, 'first_name', split.apply(lambda x: x[0]))
-            result.insert(result.columns.get_loc(name_col) + 2, 'last_name',  split.apply(lambda x: x[1]))
+            split = name_series.str.split(n=1, expand=True)
+            first_name = split[0].fillna('').str.capitalize() if 0 in split.columns else pd.Series('', index=result.index)
+            last_name = split[1].fillna('').str.title() if 1 in split.columns else pd.Series('', index=result.index)
+            result.insert(result.columns.get_loc(name_col) + 1, 'first_name', first_name)
+            result.insert(result.columns.get_loc(name_col) + 2, 'last_name', last_name)
 
     # ── Reorder columns ──
     ordered = []
@@ -236,10 +412,14 @@ def upload():
     try:
         df = read_file(file)
         df = df.fillna('')
+        upload_token = store_uploaded_dataframe(file.filename, df)
+        inferred = infer_columns(df)
         return jsonify({
-            'columns':    list(df.columns),
-            'preview':    df.head(10).to_dict(orient='records'),
-            'total_rows': len(df),
+            'columns':           list(df.columns),
+            'preview':           df.head(10).to_dict(orient='records'),
+            'total_rows':        len(df),
+            'suggested_columns': inferred,
+            'upload_token':      upload_token,
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -247,14 +427,7 @@ def upload():
 
 @app.route('/process_stream', methods=['POST'])
 def process_stream():
-    file = request.files.get('file')
-    if not file:
-        return jsonify({'error': 'Nenhum arquivo enviado'}), 400
-
     config   = json.loads(request.form.get('config', '{}'))
-    filename = file.filename
-    file_buf = io.BytesIO(file.read())
-    fake     = FakeFile(file_buf, filename)
 
     def generate():
         def emit(pct, msg, data=None):
@@ -264,21 +437,22 @@ def process_stream():
 
         try:
             yield from emit(5, 'Lendo arquivo…')
-            fake.seek(0)
-            df    = read_file(fake)
-            df    = df.fillna('')
+            df, filename, upload_token = load_dataframe_from_request(request)
             total = len(df)
 
             yield from emit(20, f'{total} linhas encontradas. Processando…')
-            result    = process_dataframe(df, config)
+            result_cache_key = build_result_cache_key(upload_token, filename, config)
+            result = get_processed_result(result_cache_key)
+            if result is None:
+                result = process_dataframe(df, config)
+                store_processed_result(result_cache_key, result)
             result_df = result['df']
 
             # Detect misplaced phones (only if no fixes already provided)
             phone_col = config.get('phone_col')
             misplaced = []
             if phone_col and not config.get('phone_fixes'):
-                df_clean = df.astype(str).replace({'nan': '', 'None': '', '<NA>': ''})
-                df_clean = df_clean.apply(lambda col: col.str.strip())
+                df_clean = clean_dataframe(df)
                 misplaced = detect_misplaced_phones(df_clean, phone_col, config.get('keep_cols', []))
 
             yield from emit(85, 'Finalizando…')
@@ -300,34 +474,38 @@ def process_stream():
             import traceback; traceback.print_exc()
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
-    return Response(generate(), mimetype='text/event-stream',
+    return Response(stream_with_context(generate()), mimetype='text/event-stream',
                     headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
 
 @app.route('/download', methods=['POST'])
 def download():
-    file   = request.files.get('file')
     config = json.loads(request.form.get('config', '{}'))
     fmt    = request.form.get('format', 'xlsx')
-    if not file:
-        return jsonify({'error': 'Nenhum arquivo enviado'}), 400
-    df        = read_file(file)
-    df        = df.fillna('')
-    result    = process_dataframe(df, config)
+    try:
+        df, filename, upload_token = load_dataframe_from_request(request)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    download_name = build_download_name(filename, fmt)
+    result_cache_key = build_result_cache_key(upload_token, filename, config)
+    result = get_processed_result(result_cache_key)
+    if result is None:
+        result = process_dataframe(df, config)
+        store_processed_result(result_cache_key, result)
     result_df = result['df']
     buf = io.BytesIO()
     if fmt == 'csv':
         result_df.to_csv(buf, index=False, encoding='utf-8-sig')
         buf.seek(0)
         return send_file(buf, mimetype='text/csv',
-                         as_attachment=True, download_name='lista_higienizada.csv')
+                         as_attachment=True, download_name=download_name)
     else:
         with pd.ExcelWriter(buf, engine='openpyxl') as writer:
             result_df.to_excel(writer, index=False, sheet_name='Higienizado')
         buf.seek(0)
         return send_file(buf,
                          mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                         as_attachment=True, download_name='lista_higienizada.xlsx')
+                         as_attachment=True, download_name=download_name)
 
 
 if __name__ == '__main__':

@@ -394,6 +394,8 @@
 <script>
 let selectedCols = new Set();
 let lastConfig = {};
+let lastPhoneFixes = [];
+let uploadToken = null;
 let dupResolve = null;
 let misplacedResolve = null;
 let pendingMisplaced = [];
@@ -414,6 +416,10 @@ fileEl.addEventListener('change', onFile);
 async function onFile() {
   const f = fileEl.files[0];
   if (!f) return;
+  lastConfig = {};
+  lastPhoneFixes = [];
+  uploadToken = null;
+  pendingMisplaced = [];
 
   const badge = document.getElementById('fileBadge');
   badge.innerHTML = '<div class="file-badge"><span class="spin"></span> Lendo arquivo…</div>';
@@ -435,10 +441,12 @@ async function onFile() {
     return;
   }
 
+  uploadToken = data.upload_token || null;
+
   badge.innerHTML =
     `<div class="file-badge">✓ ${f.name} — ${data.total_rows} linhas · ${data.columns.length} colunas</div>`;
 
-  buildColumnConfig(data.columns);
+  buildColumnConfig(data.columns, data.suggested_columns || {});
 
   activate('step1', false);
   activate('step2', true);
@@ -448,7 +456,7 @@ async function onFile() {
   document.getElementById('btnProcess').disabled = false;
 }
 
-function buildColumnConfig(cols) {
+function buildColumnConfig(cols, suggested = {}) {
   const nameEl  = document.getElementById('nameCol');
   const phoneEl = document.getElementById('phoneCol');
   nameEl.innerHTML  = '<option value="">— não mapear —</option>';
@@ -459,12 +467,12 @@ function buildColumnConfig(cols) {
     phoneEl.innerHTML += `<option value="${c}">${c}</option>`;
   });
 
-  // Auto-detect
-  cols.forEach(c => {
-    const lc = c.toLowerCase().replace(/\s/g, '');
-    if (/nome|name/.test(lc))                          nameEl.value  = c;
-    if (/tel|fone|phone|cel|numero|número|núm/.test(lc)) phoneEl.value = c;
-  });
+  if (suggested.name_col && cols.includes(suggested.name_col)) {
+    nameEl.value = suggested.name_col;
+  }
+  if (suggested.phone_col && cols.includes(suggested.phone_col)) {
+    phoneEl.value = suggested.phone_col;
+  }
 
   // Chips — real file columns only, all selected by default
   selectedCols = new Set(cols);
@@ -491,7 +499,9 @@ async function doProcess() {
   btn.innerHTML = '<span class="spin"></span> Processando…';
   setProgress(0, 'Iniciando…');
 
+  lastPhoneFixes = [];
   const cfg = buildConfig('keep');
+  lastConfig = cfg;
   const res = await streamProcess(cfg);
 
   btn.disabled = false;
@@ -505,7 +515,9 @@ async function doProcess() {
   if (res.misplaced && res.misplaced.length > 0) {
     showMisplacedModal(res.misplaced, async (fixes) => {
       if (fixes.length > 0) {
-        const cfg2 = {...lastConfig, phone_fixes: fixes};
+        lastPhoneFixes = fixes;
+        const cfg2 = {...lastConfig, phone_fixes: [...lastPhoneFixes]};
+        lastConfig = cfg2;
         const btnEl = document.getElementById('btnProcess');
         btnEl.disabled = true;
         btnEl.innerHTML = '<span class="spin"></span> Reprocessando…';
@@ -525,7 +537,7 @@ async function doProcess() {
     document.getElementById('dupModal').classList.add('open');
     dupResolve = async (action) => {
       document.getElementById('dupModal').classList.remove('open');
-      lastConfig = buildConfig(action);
+      lastConfig = {...buildConfig(action), phone_fixes: [...lastPhoneFixes]};
       btn.disabled = true;
       btn.innerHTML = '<span class="spin"></span> Processando…';
       setProgress(0, 'Reprocessando…');
@@ -575,10 +587,11 @@ function hideProgress() {
   document.getElementById('progressPct').textContent = '0%';
 }
 
-function streamProcess(cfg) {
+function streamProcess(cfg, forceFile = false) {
   return new Promise((resolve) => {
     const fd = new FormData();
-    fd.append('file', fileEl.files[0]);
+    if (uploadToken && !forceFile) fd.append('upload_token', uploadToken);
+    else fd.append('file', fileEl.files[0]);
     fd.append('config', JSON.stringify(cfg));
 
     fetch('/process_stream', { method: 'POST', body: fd })
@@ -597,7 +610,15 @@ function streamProcess(cfg) {
               if (!line.startsWith('data:')) continue;
               try {
                 const payload = JSON.parse(line.slice(5).trim());
-                if (payload.error) { resolve(payload); return; }
+                if (payload.error) {
+                  if (uploadToken && !forceFile && fileEl.files[0]) {
+                    uploadToken = null;
+                    resolve(streamProcess(cfg, true));
+                    return;
+                  }
+                  resolve(payload);
+                  return;
+                }
                 setProgress(payload.pct, payload.msg);
                 if (payload.pct === 100 && payload.data) {
                   resolve(payload.data);
@@ -621,6 +642,7 @@ function buildConfig(dupAction) {
     split_names: document.getElementById('splitNames').checked,
     dup_action:  dupAction,
     keep_cols:   [...selectedCols],
+    phone_fixes: [...lastPhoneFixes],
   };
 }
 
@@ -661,7 +683,11 @@ function resolveMisplaced(useSelected) {
   if (!misplacedResolve) return;
   const fixes = useSelected
     ? pendingMisplaced.filter((_, i) => document.getElementById('mc_' + i).checked)
-        .map(item => ({ row_index: item.row_index, normalized: item.normalized }))
+        .map(item => ({
+          row_index: item.row_index,
+          normalized: item.normalized,
+          found_col: item.found_col,
+        }))
     : [];
   misplacedResolve(fixes);
   misplacedResolve = null;
@@ -720,14 +746,33 @@ function switchTab(which) {
 // ── Download ──
 async function doDownload() {
   const fd = new FormData();
-  fd.append('file', fileEl.files[0]);
+  if (uploadToken) fd.append('upload_token', uploadToken);
+  else fd.append('file', fileEl.files[0]);
   fd.append('config', JSON.stringify(lastConfig));
   fd.append('format', downloadFmt);
   const res  = await fetch('/download', { method: 'POST', body: fd });
+  if (!res.ok) {
+    if (uploadToken && fileEl.files[0]) {
+      uploadToken = null;
+      return doDownload();
+    }
+    let errMsg = 'Erro ao baixar arquivo';
+    try {
+      const data = await res.json();
+      errMsg = data.error || errMsg;
+    } catch {}
+    alert(errMsg);
+    return;
+  }
   const blob = await res.blob();
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
-  a.href = url; a.download = `lista_higienizada.${downloadFmt}`; a.click();
+  const contentDisposition = res.headers.get('Content-Disposition') || '';
+  const match = contentDisposition.match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i);
+  const fallbackBase = (fileEl.files[0]?.name || 'arquivo').replace(/\.[^.]+$/, '');
+  const fallbackName = `${fallbackBase}_higienizado.${downloadFmt}`;
+  const downloadName = decodeURIComponent(match?.[1] || match?.[2] || fallbackName);
+  a.href = url; a.download = downloadName; a.click();
   URL.revokeObjectURL(url);
 }
 
