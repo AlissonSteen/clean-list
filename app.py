@@ -22,29 +22,82 @@ def extract_phones(raw: str):
     return [re.sub(r'[^\d]', '', p.strip()) for p in parts if re.sub(r'[^\d]', '', p.strip())]
 
 
+def only_digits(val: str) -> str:
+    return re.sub(r'[^\d]', '', str(val))
+
+
+def is_repeated_digits(digits: str) -> bool:
+    return bool(digits) and len(set(digits)) == 1
+
+
+def is_valid_cpf(digits: str) -> bool:
+    if len(digits) != 11 or is_repeated_digits(digits):
+        return False
+
+    total = sum(int(digits[i]) * (10 - i) for i in range(9))
+    check_1 = (total * 10 % 11) % 10
+    total = sum(int(digits[i]) * (11 - i) for i in range(10))
+    check_2 = (total * 10 % 11) % 10
+    return digits[-2:] == f'{check_1}{check_2}'
+
+
+def is_valid_cnpj(digits: str) -> bool:
+    if len(digits) != 14 or is_repeated_digits(digits):
+        return False
+
+    def _calc(base: str, weights: list[int]) -> str:
+        total = sum(int(d) * w for d, w in zip(base, weights))
+        remainder = total % 11
+        return '0' if remainder < 2 else str(11 - remainder)
+
+    check_1 = _calc(digits[:12], [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2])
+    check_2 = _calc(digits[:12] + check_1, [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2])
+    return digits[-2:] == f'{check_1}{check_2}'
+
+
+def looks_like_document_id(val: str) -> bool:
+    digits = only_digits(val)
+    return is_valid_cpf(digits) or is_valid_cnpj(digits)
+
+
+def is_document_column_name(col_name: str) -> bool:
+    normalized = re.sub(r'[^a-z0-9]', '', str(col_name).lower())
+    return any(token in normalized for token in ('cpf', 'cnpj', 'documento', 'doc', 'rg'))
+
+
 def normalize_phone(digits: str):
     if not digits:
         return None
-    if digits.startswith('55') and len(digits) >= 12:
+    if looks_like_document_id(digits):
+        return None
+    if digits.startswith('55') and len(digits) in (12, 13):
         digits = digits[2:]
-    if len(digits) < 10:
+    if looks_like_document_id(digits) or len(digits) not in (10, 11):
         return None
     ddd = int(digits[:2])
+    if not 11 <= ddd <= 99:
+        return None
     number = digits[2:]
-    if ddd >= 28:
-        if len(number) == 9 and number.startswith('9'):
-            number = number[1:]
-    else:
-        if len(number) == 8:
+    if len(number) == 8:
+        if number[0] in '2345':
+            return f'55{ddd:02d}{number}'
+        if number[0] in '6789':
             number = '9' + number
-    if len(number) < 8:
+        else:
+            return None
+    elif len(number) == 9:
+        if not number.startswith('9'):
+            return None
+    else:
         return None
     return f'55{ddd:02d}{number}'
 
 
 def looks_like_phone(val: str) -> str | None:
     """Return normalized phone if val looks like a phone number, else None."""
-    digits = re.sub(r'[^\d]', '', str(val))
+    digits = only_digits(val)
+    if looks_like_document_id(digits):
+        return None
     if 10 <= len(digits) <= 13:
         return normalize_phone(digits)
     return None
@@ -64,6 +117,8 @@ def infer_phone_column(df: pd.DataFrame) -> str | None:
     best_score = 0.0
 
     for col in df.columns:
+        if is_document_column_name(col):
+            continue
         series = df[col].fillna('').astype(str).str.strip()
         sample = series[series.ne('')].head(200)
         if sample.empty:
@@ -237,7 +292,7 @@ def detect_misplaced_phones(df: pd.DataFrame, phone_col: str, keep_cols: list) -
         return []
 
     suggestions = []
-    other_cols = [c for c in df.columns if c != phone_col]
+    other_cols = [c for c in df.columns if c != phone_col and not is_document_column_name(c)]
     phone_series = df[phone_col].fillna('').astype(str).str.strip()
     pending_rows = phone_series.map(lambda val: looks_like_phone(val) is None)
     if not pending_rows.any():
