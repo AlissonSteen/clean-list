@@ -66,13 +66,12 @@ def is_document_column_name(col_name: str) -> bool:
 
 
 def normalize_phone(digits: str):
+    digits = only_digits(digits)
     if not digits:
-        return None
-    if looks_like_document_id(digits):
         return None
     if digits.startswith('55') and len(digits) in (12, 13):
         digits = digits[2:]
-    if looks_like_document_id(digits) or len(digits) not in (10, 11):
+    if len(digits) not in (10, 11):
         return None
     ddd = int(digits[:2])
     if not 11 <= ddd <= 99:
@@ -93,14 +92,15 @@ def normalize_phone(digits: str):
     return f'55{ddd:02d}{number}'
 
 
-def looks_like_phone(val: str) -> str | None:
+def looks_like_phone(val: str, reject_documents: bool = True) -> str | None:
     """Return normalized phone if val looks like a phone number, else None."""
     digits = only_digits(val)
-    if looks_like_document_id(digits):
+    normalized = normalize_phone(digits)
+    if not normalized:
         return None
-    if 10 <= len(digits) <= 13:
-        return normalize_phone(digits)
-    return None
+    if reject_documents and looks_like_document_id(digits):
+        return None
+    return normalized
 
 
 # ─── Name helpers ──────────────────────────────────────────────────────────────
@@ -184,6 +184,110 @@ def build_download_name(original_name: str, fmt: str) -> str:
     return f'{root}_higienizado.{ext}'
 
 
+def make_error_payload(title: str, message: str, hint: str = '', kind: str = 'error',
+                       details: str = '') -> dict:
+    payload = {
+        'title': title,
+        'message': message,
+        'kind': kind,
+    }
+    if hint:
+        payload['hint'] = hint
+    if details:
+        payload['details'] = details
+    return payload
+
+
+def classify_exception(exc: Exception, context: str = 'general') -> dict:
+    message = str(exc).strip()
+
+    if 'Nenhum arquivo enviado' in message:
+        return make_error_payload(
+            'Arquivo não enviado',
+            'Nenhum arquivo foi enviado para o sistema.',
+            'Selecione um arquivo antes de continuar.'
+        )
+
+    if 'Formato não suportado' in message:
+        return make_error_payload(
+            'Formato não suportado',
+            'Não conseguimos ler esse tipo de arquivo.',
+            'Use um arquivo .xlsx, .xls, .csv ou .pdf.'
+        )
+
+    if 'Arquivo sem colunas legíveis' in message:
+        return make_error_payload(
+            'Arquivo sem colunas legíveis',
+            'O arquivo foi recebido, mas não encontramos colunas válidas para montar a tabela.',
+            'Revise o arquivo de origem e confira se ele tem cabeçalhos e dados estruturados.'
+        )
+
+    if isinstance(exc, pd.errors.EmptyDataError):
+        return make_error_payload(
+            'Arquivo vazio',
+            'O arquivo não contém dados suficientes para leitura.',
+            'Verifique se ele possui linhas e colunas preenchidas.'
+        )
+
+    lowered = message.lower()
+    if 'excel file format cannot be determined' in lowered:
+        return make_error_payload(
+            'Planilha inválida',
+            'Não foi possível identificar a estrutura da planilha enviada.',
+            'Tente salvar novamente o arquivo como .xlsx ou envie em .csv.'
+        )
+
+    if 'unicode' in lowered or 'codec' in lowered or 'encoding' in lowered:
+        return make_error_payload(
+            'Erro de leitura do arquivo',
+            'Não conseguimos interpretar a codificação do arquivo enviado.',
+            'Tente abrir e salvar novamente o arquivo como CSV UTF-8 ou planilha .xlsx.'
+        )
+
+    if context == 'upload':
+        return make_error_payload(
+            'Falha ao ler o arquivo',
+            'Não foi possível abrir esse arquivo para montar a prévia.',
+            'Confira se o arquivo não está corrompido e tente novamente.',
+            details=message
+        )
+
+    if context == 'process':
+        return make_error_payload(
+            'Falha na higienização',
+            'O arquivo foi recebido, mas houve um problema durante o processamento dos dados.',
+            'Revise o mapeamento das colunas e tente novamente.',
+            details=message
+        )
+
+    if context == 'download':
+        return make_error_payload(
+            'Falha ao gerar o download',
+            'Não foi possível montar o arquivo final higienizado.',
+            'Tente processar novamente a lista antes de baixar.',
+            details=message
+        )
+
+    if context == 'preview':
+        return make_error_payload(
+            'Falha na visualização',
+            'Não foi possível atualizar a prévia com os filtros atuais.',
+            'Tente alterar os filtros ou recarregar o arquivo.',
+            details=message
+        )
+
+    return make_error_payload(
+        'Erro inesperado',
+        'Ocorreu um erro que não esperávamos neste fluxo.',
+        'Tente novamente. Se persistir, revise o arquivo e os dados de entrada.',
+        details=message
+    )
+
+
+def jsonify_error(exc: Exception, status_code: int, context: str):
+    return jsonify({'error': classify_exception(exc, context)}), status_code
+
+
 def _cache_put(cache: OrderedDict, key: str, value: dict, max_size: int) -> None:
     if key in cache:
         cache.pop(key)
@@ -241,6 +345,8 @@ def load_dataframe_from_request(req) -> tuple[pd.DataFrame, str, str | None]:
         raise ValueError('Nenhum arquivo enviado')
 
     df = read_file(file).fillna('')
+    if len(df.columns) == 0:
+        raise ValueError('Arquivo sem colunas legíveis')
     return df, file.filename, None
 
 
@@ -248,6 +354,175 @@ def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     cleaned = df.fillna('').astype(str).replace({'nan': '', 'None': '', '<NA>': ''})
     cleaned = cleaned.apply(lambda col: col.str.strip())
     return cleaned.loc[cleaned.ne('').any(axis=1)].reset_index(drop=True)
+
+
+def get_or_process_result(df: pd.DataFrame, filename: str, upload_token: str | None, config: dict) -> dict:
+    result_cache_key = build_result_cache_key(upload_token, filename, config)
+    result = get_processed_result(result_cache_key)
+    if result is None:
+        result = process_dataframe(df, config)
+        store_processed_result(result_cache_key, result)
+    return result
+
+
+def parse_datetime_series(series: pd.Series) -> pd.Series:
+    cleaned = series.fillna('').astype(str).str.strip()
+    parsed = pd.Series(pd.NaT, index=cleaned.index, dtype='datetime64[ns]')
+    for fmt in ('%Y-%m-%d', '%d/%m/%Y', '%d-%m-%Y', '%Y/%m/%d'):
+        pending = parsed.isna() & cleaned.ne('')
+        if not pending.any():
+            break
+        parsed.loc[pending] = pd.to_datetime(cleaned.loc[pending], format=fmt, errors='coerce')
+    return parsed
+
+
+def infer_date_columns(df: pd.DataFrame, sample_size: int = 200) -> list[str]:
+    date_cols = []
+    for col in df.columns:
+        series = df[col].fillna('').astype(str).str.strip()
+        sample = series[series.ne('')].head(sample_size)
+        if sample.empty:
+            continue
+        parsed = parse_datetime_series(sample)
+        hits = int(parsed.notna().sum())
+        if hits >= 2 and hits / len(sample) >= 0.35:
+            date_cols.append(col)
+    return date_cols
+
+
+def build_preview_meta(df: pd.DataFrame, config: dict) -> dict:
+    name_col = config.get('name_col') if config.get('name_col') in df.columns else None
+    phone_col = config.get('phone_col') if config.get('phone_col') in df.columns else None
+    date_cols = infer_date_columns(df)
+
+    phone_filter_options = [{'value': 'all', 'label': 'Todos os registros'}]
+    if phone_col:
+        phone_filter_options.extend([
+            {'value': 'phone_present', 'label': 'Com telefone'},
+            {'value': 'phone_missing', 'label': 'Sem telefone'},
+            {'value': 'phone_valid', 'label': 'Telefones válidos'},
+            {'value': 'phone_invalid', 'label': 'Telefones inválidos'},
+        ])
+
+    sort_options = [{'value': '', 'label': 'Sem ordenação'}]
+    if name_col:
+        sort_options.extend([
+            {'value': f'name::{name_col}::asc', 'label': f'{name_col} A → Z'},
+            {'value': f'name::{name_col}::desc', 'label': f'{name_col} Z → A'},
+        ])
+    if phone_col:
+        sort_options.extend([
+            {'value': f'ddd::{phone_col}::asc', 'label': 'DDD crescente'},
+            {'value': f'ddd::{phone_col}::desc', 'label': 'DDD decrescente'},
+        ])
+    for col in date_cols:
+        sort_options.extend([
+            {'value': f'date::{col}::desc', 'label': f'{col} mais recente'},
+            {'value': f'date::{col}::asc', 'label': f'{col} mais antiga'},
+        ])
+
+    return {
+        'phone_col': phone_col,
+        'name_col': name_col,
+        'date_columns': date_cols,
+        'phone_filter_options': phone_filter_options,
+        'sort_options': sort_options,
+    }
+
+
+def apply_phone_filter(frame: pd.DataFrame, phone_col: str | None, phone_filter: str) -> pd.DataFrame:
+    if not phone_col or phone_col not in frame.columns or phone_filter == 'all':
+        return frame
+
+    series = frame[phone_col].fillna('').astype(str).str.strip()
+    normalized = series.map(lambda val: looks_like_phone(val, reject_documents=False))
+    has_value = series.ne('')
+    is_valid = normalized.notna()
+
+    if phone_filter == 'phone_present':
+        return frame.loc[has_value]
+    if phone_filter == 'phone_missing':
+        return frame.loc[~has_value]
+    if phone_filter == 'phone_valid':
+        return frame.loc[is_valid]
+    if phone_filter == 'phone_invalid':
+        return frame.loc[has_value & ~is_valid]
+    return frame
+
+
+def apply_date_filter(frame: pd.DataFrame, date_col: str | None, date_from: str, date_to: str) -> pd.DataFrame:
+    if not date_col or date_col not in frame.columns or (not date_from and not date_to):
+        return frame
+
+    parsed = parse_datetime_series(frame[date_col])
+    mask = parsed.notna()
+    if date_from:
+        mask &= parsed >= pd.to_datetime(date_from)
+    if date_to:
+        mask &= parsed <= pd.to_datetime(date_to) + pd.Timedelta(days=1) - pd.Timedelta(microseconds=1)
+    return frame.loc[mask]
+
+
+def apply_preview_sort(frame: pd.DataFrame, sort_mode: str) -> pd.DataFrame:
+    if not sort_mode:
+        return frame
+
+    parts = sort_mode.split('::', 2)
+    if len(parts) != 3:
+        return frame
+
+    mode, col, direction = parts
+    ascending = direction != 'desc'
+    if col not in frame.columns:
+        return frame
+
+    if mode == 'name':
+        sort_key = frame[col].fillna('').astype(str).str.strip().str.casefold()
+    elif mode == 'ddd':
+        normalized = frame[col].fillna('').astype(str).map(
+            lambda val: looks_like_phone(val, reject_documents=False)
+        )
+        sort_key = pd.to_numeric(normalized.str[2:4], errors='coerce')
+    elif mode == 'date':
+        sort_key = parse_datetime_series(frame[col])
+    else:
+        return frame
+
+    return frame.assign(_sort_key=sort_key).sort_values(
+        by=['_sort_key', col], ascending=ascending, kind='mergesort', na_position='last'
+    ).drop(columns=['_sort_key'])
+
+
+def build_preview_payload(df: pd.DataFrame, cols: list[str], config: dict, search: str = '', limit: int = 10,
+                          phone_filter: str = 'all', sort_mode: str = '',
+                          date_col: str | None = None, date_from: str = '', date_to: str = '') -> dict:
+    frame = df.copy()
+    frame = frame.astype(str).replace({'nan': '', 'None': '', '<NA>': ''})
+    total_rows = len(frame)
+    meta = build_preview_meta(frame, config)
+
+    search = str(search or '').strip()
+    if search:
+        escaped = re.escape(search)
+        mask = frame.apply(lambda col: col.str.contains(escaped, case=False, na=False))
+        frame = frame.loc[mask.any(axis=1)]
+
+    frame = apply_phone_filter(frame, meta.get('phone_col'), phone_filter)
+    frame = apply_date_filter(frame, date_col, date_from, date_to)
+    filtered_total = len(frame)
+    frame = apply_preview_sort(frame, sort_mode)
+
+    limit = max(1, min(int(limit or 10), 200))
+    frame = frame.head(limit)
+
+    return {
+        'columns': cols,
+        'rows': frame[cols].to_dict(orient='records'),
+        'shown_count': len(frame),
+        'filtered_total': filtered_total,
+        'total_rows': total_rows,
+        'meta': meta,
+    }
 
 
 # ─── File reading ──────────────────────────────────────────────────────────────
@@ -294,7 +569,7 @@ def detect_misplaced_phones(df: pd.DataFrame, phone_col: str, keep_cols: list) -
     suggestions = []
     other_cols = [c for c in df.columns if c != phone_col and not is_document_column_name(c)]
     phone_series = df[phone_col].fillna('').astype(str).str.strip()
-    pending_rows = phone_series.map(lambda val: looks_like_phone(val) is None)
+    pending_rows = phone_series.map(lambda val: looks_like_phone(val, reject_documents=False) is None)
     if not pending_rows.any():
         return []
 
@@ -463,10 +738,12 @@ def index():
 def upload():
     file = request.files.get('file')
     if not file:
-        return jsonify({'error': 'Nenhum arquivo enviado'}), 400
+        return jsonify_error(ValueError('Nenhum arquivo enviado'), 400, 'upload')
     try:
         df = read_file(file)
         df = df.fillna('')
+        if len(df.columns) == 0:
+            raise ValueError('Arquivo sem colunas legíveis')
         upload_token = store_uploaded_dataframe(file.filename, df)
         inferred = infer_columns(df)
         return jsonify({
@@ -477,7 +754,8 @@ def upload():
             'upload_token':      upload_token,
         })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        status_code = 400 if isinstance(e, (ValueError, pd.errors.EmptyDataError)) else 500
+        return jsonify_error(e, status_code, 'upload')
 
 
 @app.route('/process_stream', methods=['POST'])
@@ -496,11 +774,7 @@ def process_stream():
             total = len(df)
 
             yield from emit(20, f'{total} linhas encontradas. Processando…')
-            result_cache_key = build_result_cache_key(upload_token, filename, config)
-            result = get_processed_result(result_cache_key)
-            if result is None:
-                result = process_dataframe(df, config)
-                store_processed_result(result_cache_key, result)
+            result = get_or_process_result(df, filename, upload_token, config)
             result_df = result['df']
 
             # Detect misplaced phones (only if no fixes already provided)
@@ -527,7 +801,7 @@ def process_stream():
 
         except Exception as e:
             import traceback; traceback.print_exc()
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            yield f"data: {json.dumps({'error': classify_exception(e, 'process')}, ensure_ascii=False)}\n\n"
 
     return Response(stream_with_context(generate()), mimetype='text/event-stream',
                     headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
@@ -540,27 +814,69 @@ def download():
     try:
         df, filename, upload_token = load_dataframe_from_request(request)
     except ValueError as e:
-        return jsonify({'error': str(e)}), 400
-    download_name = build_download_name(filename, fmt)
-    result_cache_key = build_result_cache_key(upload_token, filename, config)
-    result = get_processed_result(result_cache_key)
-    if result is None:
-        result = process_dataframe(df, config)
-        store_processed_result(result_cache_key, result)
-    result_df = result['df']
-    buf = io.BytesIO()
-    if fmt == 'csv':
-        result_df.to_csv(buf, index=False, encoding='utf-8-sig')
-        buf.seek(0)
-        return send_file(buf, mimetype='text/csv',
-                         as_attachment=True, download_name=download_name)
-    else:
-        with pd.ExcelWriter(buf, engine='openpyxl') as writer:
-            result_df.to_excel(writer, index=False, sheet_name='Higienizado')
-        buf.seek(0)
-        return send_file(buf,
-                         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                         as_attachment=True, download_name=download_name)
+        return jsonify_error(e, 400, 'download')
+    try:
+        download_name = build_download_name(filename, fmt)
+        result = get_or_process_result(df, filename, upload_token, config)
+        result_df = result['df']
+        buf = io.BytesIO()
+        if fmt == 'csv':
+            result_df.to_csv(buf, index=False, encoding='utf-8-sig')
+            buf.seek(0)
+            return send_file(buf, mimetype='text/csv',
+                             as_attachment=True, download_name=download_name)
+        else:
+            with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+                result_df.to_excel(writer, index=False, sheet_name='Higienizado')
+            buf.seek(0)
+            return send_file(buf,
+                             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                             as_attachment=True, download_name=download_name)
+    except Exception as e:
+        status_code = 400 if isinstance(e, (ValueError, pd.errors.EmptyDataError)) else 500
+        return jsonify_error(e, status_code, 'download')
+
+
+@app.route('/preview', methods=['POST'])
+def preview():
+    config = json.loads(request.form.get('config', '{}'))
+    stage = request.form.get('stage', 'before')
+    search = request.form.get('search', '')
+    phone_filter = request.form.get('phone_filter', 'all')
+    sort_mode = request.form.get('sort_mode', '')
+    date_col = request.form.get('date_col') or None
+    date_from = request.form.get('date_from', '')
+    date_to = request.form.get('date_to', '')
+    limit = request.form.get('limit', '10')
+
+    try:
+        df, filename, upload_token = load_dataframe_from_request(request)
+    except ValueError as e:
+        return jsonify_error(e, 400, 'preview')
+    try:
+        if stage == 'after':
+            result = get_or_process_result(df, filename, upload_token, config)
+            preview_df = result['df']
+        else:
+            preview_df = df.fillna('').astype(str)
+
+        cols = list(preview_df.columns)
+        payload = build_preview_payload(
+            preview_df,
+            cols=cols,
+            config=config,
+            search=search,
+            limit=limit,
+            phone_filter=phone_filter,
+            sort_mode=sort_mode,
+            date_col=date_col,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        return jsonify(payload)
+    except Exception as e:
+        status_code = 400 if isinstance(e, (ValueError, pd.errors.EmptyDataError)) else 500
+        return jsonify_error(e, status_code, 'preview')
 
 
 if __name__ == '__main__':

@@ -193,6 +193,30 @@
   }
   .preview-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
+  .preview-tools {
+    display: grid; grid-template-columns: minmax(220px, 1.5fr) repeat(3, minmax(150px, .75fr));
+    gap: 12px; margin-bottom: 16px;
+  }
+  .preview-tools-extra {
+    display: grid; grid-template-columns: repeat(3, minmax(160px, 1fr));
+    gap: 12px; margin-bottom: 16px;
+  }
+  .preview-search {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--sans); font-size: 14px;
+    padding: 10px 12px; border-radius: 8px; outline: none; transition: border-color .15s;
+  }
+  .preview-search:focus { border-color: var(--accent); }
+  .preview-tools .field-group { margin-bottom: 0; }
+  @media (max-width: 900px) {
+    .preview-tools { grid-template-columns: 1fr 1fr; }
+    .preview-tools-extra { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 600px) {
+    .preview-tools { grid-template-columns: 1fr; }
+    .preview-tools-extra { grid-template-columns: 1fr; }
+  }
+
   .table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid var(--border); }
   table { width: 100%; border-collapse: collapse; font-size: 13px; font-family: var(--mono); }
   thead th {
@@ -203,6 +227,9 @@
   tbody td {
     padding: 9px 14px; border-bottom: 1px solid rgba(46,46,69,.5);
     white-space: nowrap; color: var(--text);
+  }
+  tbody td.empty-state {
+    text-align: center; color: var(--muted); padding: 18px 14px; font-family: var(--sans);
   }
   tbody tr:last-child td { border-bottom: none; }
   tbody tr:hover td { background: rgba(255,255,255,.025); }
@@ -222,6 +249,29 @@
     cursor: pointer; transition: all .15s;
   }
   .fmt-pill.on { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+  .notice-stack {
+    position: fixed; top: 18px; right: 18px; z-index: 350;
+    width: min(420px, calc(100vw - 24px)); display: flex; flex-direction: column; gap: 10px;
+  }
+  .notice {
+    background: var(--surface); border: 1px solid var(--border); border-left-width: 4px;
+    border-radius: 12px; padding: 14px 16px; box-shadow: 0 14px 40px rgba(0,0,0,.28);
+  }
+  .notice.error { border-left-color: var(--danger); }
+  .notice.warn { border-left-color: var(--warn); }
+  .notice.info { border-left-color: var(--purple); }
+  .notice.success { border-left-color: var(--accent); }
+  .notice-head {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 6px;
+  }
+  .notice-title { font-size: 14px; font-weight: 700; }
+  .notice-close {
+    background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: 18px; line-height: 1;
+  }
+  .notice-body { font-size: 13px; color: var(--text); line-height: 1.5; }
+  .notice-hint { margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .notice-detail { margin-top: 8px; font-size: 11px; color: var(--muted); font-family: var(--mono); }
 
   .modal-bg {
     position: fixed; inset: 0; background: rgba(0,0,0,.65); backdrop-filter: blur(4px);
@@ -345,6 +395,44 @@
       <div class="preview-tab" id="tabAfter" onclick="switchTab('after')">✅ Depois (higienizado)</div>
     </div>
 
+    <div class="preview-tools">
+      <div class="field-group">
+        <div class="field-label">Pesquisar</div>
+        <input class="preview-search" id="previewSearch" type="text" placeholder="Buscar por nome, telefone ou qualquer valor"/>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Mostrar</div>
+        <select class="fsel" id="previewLimit">
+          <option value="10">10 linhas</option>
+          <option value="30">30 linhas</option>
+          <option value="50">50 linhas</option>
+        </select>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Filtro</div>
+        <select class="fsel" id="previewPhoneFilter"></select>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Ordenação</div>
+        <select class="fsel" id="previewSortMode"></select>
+      </div>
+    </div>
+
+    <div class="preview-tools-extra hidden" id="previewDateTools">
+      <div class="field-group">
+        <div class="field-label">Filtrar data por</div>
+        <select class="fsel" id="previewDateCol"></select>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Data inicial</div>
+        <input class="preview-search" id="previewDateFrom" type="date"/>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Data final</div>
+        <input class="preview-search" id="previewDateTo" type="date"/>
+      </div>
+    </div>
+
     <div id="panelBefore">
       <div class="table-wrap" id="tblBefore"></div>
       <div class="rows-note" id="noteBefore"></div>
@@ -365,6 +453,8 @@
   </div>
 
 </div>
+
+<div class="notice-stack" id="noticeStack"></div>
 
 <!-- Misplaced phones modal -->
 <div class="modal-bg" id="misplacedModal">
@@ -400,10 +490,67 @@ let dupResolve = null;
 let misplacedResolve = null;
 let pendingMisplaced = [];
 let downloadFmt = 'xlsx';
+let previewMeta = null;
+let previewState = {
+  active: 'before',
+  before: { search: '', limit: '10', phone_filter: 'all', sort_mode: '', date_col: '', date_from: '', date_to: '' },
+  after:  { search: '', limit: '10', phone_filter: 'all', sort_mode: '', date_col: '', date_from: '', date_to: '' },
+};
+let previewSearchTimer = null;
+let previewRequestId = 0;
 
 // ── File upload ──
 const dzEl   = document.getElementById('dropzone');
 const fileEl = document.getElementById('fileInput');
+const previewSearchEl = document.getElementById('previewSearch');
+const previewLimitEl = document.getElementById('previewLimit');
+const previewPhoneFilterEl = document.getElementById('previewPhoneFilter');
+const previewSortModeEl = document.getElementById('previewSortMode');
+const previewDateToolsEl = document.getElementById('previewDateTools');
+const previewDateColEl = document.getElementById('previewDateCol');
+const previewDateFromEl = document.getElementById('previewDateFrom');
+const previewDateToEl = document.getElementById('previewDateTo');
+const noticeStackEl = document.getElementById('noticeStack');
+
+function normalizeErrorPayload(error, fallbackTitle = 'Erro') {
+  if (!error) {
+    return { title: fallbackTitle, message: 'Ocorreu um problema inesperado.', kind: 'error' };
+  }
+  if (typeof error === 'string') {
+    return { title: fallbackTitle, message: error, kind: 'error' };
+  }
+  return {
+    title: error.title || fallbackTitle,
+    message: error.message || 'Ocorreu um problema inesperado.',
+    hint: error.hint || '',
+    details: error.details || '',
+    kind: error.kind || 'error',
+  };
+}
+
+function clearNotices() {
+  noticeStackEl.innerHTML = '';
+}
+
+function showNotice(error, fallbackTitle = 'Erro') {
+  const payload = normalizeErrorPayload(error, fallbackTitle);
+  const notice = document.createElement('div');
+  notice.className = `notice ${payload.kind}`;
+  notice.innerHTML = `
+    <div class="notice-head">
+      <div class="notice-title">${payload.title}</div>
+      <button class="notice-close" type="button" aria-label="Fechar">×</button>
+    </div>
+    <div class="notice-body">${payload.message}</div>
+    ${payload.hint ? `<div class="notice-hint">Dica: ${payload.hint}</div>` : ''}
+    ${payload.details ? `<div class="notice-detail">${payload.details}</div>` : ''}
+  `;
+  notice.querySelector('.notice-close').addEventListener('click', () => notice.remove());
+  noticeStackEl.prepend(notice);
+  setTimeout(() => {
+    if (notice.isConnected) notice.remove();
+  }, 9000);
+}
 
 dzEl.addEventListener('dragover', e => { e.preventDefault(); dzEl.classList.add('drag'); });
 dzEl.addEventListener('dragleave', () => dzEl.classList.remove('drag'));
@@ -412,13 +559,45 @@ dzEl.addEventListener('drop', e => {
   if (e.dataTransfer.files[0]) { fileEl.files = e.dataTransfer.files; onFile(); }
 });
 fileEl.addEventListener('change', onFile);
+previewSearchEl.addEventListener('input', () => {
+  const state = previewState[previewState.active];
+  state.search = previewSearchEl.value;
+  if (previewSearchTimer) clearTimeout(previewSearchTimer);
+  previewSearchTimer = setTimeout(() => loadPreview(previewState.active), 220);
+});
+previewLimitEl.addEventListener('change', () => {
+  previewState[previewState.active].limit = previewLimitEl.value;
+  loadPreview(previewState.active);
+});
+previewPhoneFilterEl.addEventListener('change', () => {
+  previewState[previewState.active].phone_filter = previewPhoneFilterEl.value;
+  loadPreview(previewState.active);
+});
+previewSortModeEl.addEventListener('change', () => {
+  previewState[previewState.active].sort_mode = previewSortModeEl.value;
+  loadPreview(previewState.active);
+});
+previewDateColEl.addEventListener('change', () => {
+  previewState[previewState.active].date_col = previewDateColEl.value;
+  loadPreview(previewState.active);
+});
+previewDateFromEl.addEventListener('change', () => {
+  previewState[previewState.active].date_from = previewDateFromEl.value;
+  loadPreview(previewState.active);
+});
+previewDateToEl.addEventListener('change', () => {
+  previewState[previewState.active].date_to = previewDateToEl.value;
+  loadPreview(previewState.active);
+});
 
 async function onFile() {
   const f = fileEl.files[0];
   if (!f) return;
+  clearNotices();
   lastConfig = {};
   lastPhoneFixes = [];
   uploadToken = null;
+  previewMeta = null;
   pendingMisplaced = [];
 
   const badge = document.getElementById('fileBadge');
@@ -433,11 +612,19 @@ async function onFile() {
     data = await res.json();
   } catch (e) {
     badge.innerHTML = '<div class="file-badge" style="border-color:var(--danger);color:var(--danger)">✗ Erro de conexão com o servidor</div>';
+    showNotice({
+      title: 'Sem conexão com o servidor',
+      message: 'Não foi possível enviar o arquivo para leitura.',
+      hint: 'Confirme se a aplicação está rodando e tente novamente.',
+      kind: 'error',
+    });
     return;
   }
 
   if (data.error) {
-    badge.innerHTML = `<div class="file-badge" style="border-color:var(--danger);color:var(--danger)">✗ ${data.error}</div>`;
+    const payload = normalizeErrorPayload(data.error, 'Falha ao ler o arquivo');
+    badge.innerHTML = `<div class="file-badge" style="border-color:var(--danger);color:var(--danger)">✗ ${payload.title}</div>`;
+    showNotice(payload, 'Falha ao ler o arquivo');
     return;
   }
 
@@ -495,6 +682,7 @@ function buildColumnConfig(cols, suggested = {}) {
 // ── Process ──
 async function doProcess() {
   const btn = document.getElementById('btnProcess');
+  clearNotices();
   btn.disabled = true;
   btn.innerHTML = '<span class="spin"></span> Processando…';
   setProgress(0, 'Iniciando…');
@@ -509,7 +697,7 @@ async function doProcess() {
   hideProgress();
 
   if (!res) return;
-  if (res.error) { alert('Erro: ' + res.error); return; }
+  if (res.error) { showNotice(res.error, 'Falha na higienização'); return; }
 
   // Show results immediately, then check for misplaced phones
   if (res.misplaced && res.misplaced.length > 0) {
@@ -527,6 +715,7 @@ async function doProcess() {
         btnEl.innerHTML = '⚡ Processar lista';
         hideProgress();
         if (r2 && !r2.error) showResults(r2);
+        else if (r2?.error) showNotice(r2.error, 'Falha na higienização');
       }
     });
   }
@@ -546,6 +735,7 @@ async function doProcess() {
       btn.innerHTML = '⚡ Processar lista';
       hideProgress();
       if (r2 && !r2.error) showResults(r2);
+      else if (r2?.error) showNotice(r2.error, 'Falha na higienização');
     };
   } else {
     lastConfig = cfg;
@@ -631,7 +821,15 @@ function streamProcess(cfg, forceFile = false) {
         }
         read();
       })
-      .catch(e => { alert('Erro de conexão: ' + e); resolve(null); });
+      .catch(() => {
+        showNotice({
+          title: 'Erro de conexão',
+          message: 'Não foi possível se comunicar com o servidor durante o processamento.',
+          hint: 'Verifique a conexão e tente novamente.',
+          kind: 'error',
+        });
+        resolve(null);
+      });
   });
 }
 
@@ -693,6 +891,114 @@ function resolveMisplaced(useSelected) {
   misplacedResolve = null;
 }
 
+function getDefaultSortMode(stage) {
+  const sortOptions = previewMeta?.[stage]?.meta?.sort_options || [];
+  return sortOptions[0]?.value || '';
+}
+
+function getDefaultDateColumn(stage) {
+  const dateColumns = previewMeta?.[stage]?.meta?.date_columns || [];
+  return dateColumns[0] || '';
+}
+
+function resetPreviewState(data) {
+  previewMeta = {
+    before: { columns: data.columns_before || [], total: data.total_before || 0, meta: null },
+    after:  { columns: data.columns_after || [], total: data.total_after || 0, meta: null },
+  };
+  previewState = {
+    active: 'before',
+    before: { search: '', limit: '10', phone_filter: 'all', sort_mode: '', date_col: '', date_from: '', date_to: '' },
+    after:  { search: '', limit: '10', phone_filter: 'all', sort_mode: '', date_col: '', date_from: '', date_to: '' },
+  };
+  syncPreviewControls();
+}
+
+function syncPreviewControls() {
+  const stage = previewState.active;
+  const state = previewState[stage];
+  const meta = previewMeta?.[stage]?.meta || {};
+  const phoneFilterOptions = meta.phone_filter_options || [{ value: 'all', label: 'Todos os registros' }];
+  const sortOptions = meta.sort_options || [{ value: '', label: 'Sem ordenação' }];
+  const dateColumns = meta.date_columns || [];
+
+  if (!phoneFilterOptions.some(opt => opt.value === state.phone_filter)) state.phone_filter = 'all';
+  if (!sortOptions.some(opt => opt.value === state.sort_mode)) state.sort_mode = getDefaultSortMode(stage);
+  if (!dateColumns.includes(state.date_col)) state.date_col = getDefaultDateColumn(stage);
+
+  previewSearchEl.value = state.search || '';
+  previewLimitEl.value = state.limit || '10';
+  previewPhoneFilterEl.innerHTML = phoneFilterOptions.map(opt => `<option value="${opt.value}">${opt.label}</option>`).join('');
+  previewPhoneFilterEl.value = state.phone_filter || 'all';
+  previewSortModeEl.innerHTML = sortOptions.map(opt => `<option value="${opt.value}">${opt.label}</option>`).join('');
+  previewSortModeEl.value = state.sort_mode || '';
+  previewDateToolsEl.classList.toggle('hidden', !dateColumns.length);
+  previewDateColEl.innerHTML = dateColumns.length
+    ? dateColumns.map(col => `<option value="${col}">${col}</option>`).join('')
+    : '<option value="">—</option>';
+  previewDateColEl.value = state.date_col || dateColumns[0] || '';
+  previewDateFromEl.value = state.date_from || '';
+  previewDateToEl.value = state.date_to || '';
+}
+
+async function loadPreview(stage, forceFile = false) {
+  if (!previewMeta?.[stage]) return;
+  previewState.active = stage;
+  const state = previewState[stage];
+  const tableId = stage === 'before' ? 'tblBefore' : 'tblAfter';
+  const noteId = stage === 'before' ? 'noteBefore' : 'noteAfter';
+  const requestId = ++previewRequestId;
+
+  syncPreviewControls();
+  document.getElementById(noteId).textContent = 'Carregando visualização...';
+
+  const fd = new FormData();
+  if (uploadToken && !forceFile) fd.append('upload_token', uploadToken);
+  else fd.append('file', fileEl.files[0]);
+  fd.append('config', JSON.stringify(lastConfig));
+  fd.append('stage', stage);
+  fd.append('search', state.search || '');
+  fd.append('limit', state.limit || '10');
+  fd.append('phone_filter', state.phone_filter || 'all');
+  fd.append('sort_mode', state.sort_mode || '');
+  fd.append('date_col', state.date_col || '');
+  fd.append('date_from', state.date_from || '');
+  fd.append('date_to', state.date_to || '');
+
+  try {
+    const res = await fetch('/preview', { method: 'POST', body: fd });
+    if (!res.ok) {
+      if (uploadToken && !forceFile && fileEl.files[0]) {
+        uploadToken = null;
+        return loadPreview(stage, true);
+      }
+      let payload = null;
+      try {
+        const data = await res.json();
+        payload = data.error || null;
+      } catch {}
+      throw payload || new Error('Erro ao carregar visualização');
+    }
+    const data = await res.json();
+    if (requestId !== previewRequestId) return;
+    previewMeta[stage].meta = data.meta || {};
+    syncPreviewControls();
+    buildTable(tableId, data.columns || [], data.rows || [], 'Nenhum registro encontrado para os filtros atuais.');
+    const filtered = data.filtered_total ?? 0;
+    const total = data.total_rows ?? 0;
+    const shown = data.shown_count ?? 0;
+    document.getElementById(noteId).textContent =
+      filtered !== total || (state.search || '')
+        ? `Mostrando ${shown} de ${filtered} linhas filtradas · total ${total}`
+        : `Mostrando ${shown} de ${total} linhas`;
+  } catch (e) {
+    if (requestId !== previewRequestId) return;
+    document.getElementById(tableId).innerHTML = '';
+    document.getElementById(noteId).textContent = 'Não foi possível carregar a visualização.';
+    showNotice(e, 'Falha na visualização');
+  }
+}
+
 // ── Results ──
 function showResults(data) {
   const s3 = document.getElementById('step3');
@@ -713,38 +1019,35 @@ function showResults(data) {
        <ul>${data.warnings.map(w => `<li>${w}</li>`).join('')}</ul></div>`
     : '';
 
-  // BEFORE: shows original file columns + original data
-  buildTable('tblBefore', data.columns_before, data.preview_before);
-  document.getElementById('noteBefore').textContent =
-    `Mostrando ${data.preview_before.length} de ${data.total_before} linhas`;
-
-  // AFTER: shows processed columns + processed data
-  buildTable('tblAfter', data.columns_after, data.preview_after);
-  document.getElementById('noteAfter').textContent =
-    `Mostrando ${data.preview_after.length} de ${data.total_after} linhas`;
-
+  resetPreviewState(data);
   switchTab('before');
   s3.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-function buildTable(id, cols, rows) {
+function buildTable(id, cols, rows, emptyMsg = 'Nenhum registro para mostrar.') {
   const ths = cols.map(c => `<th>${c}</th>`).join('');
-  const trs = rows.map(r =>
-    '<tr>' + cols.map(c => `<td>${r[c] ?? ''}</td>`).join('') + '</tr>'
-  ).join('');
+  const trs = rows.length
+    ? rows.map(r =>
+        '<tr>' + cols.map(c => `<td>${r[c] ?? ''}</td>`).join('') + '</tr>'
+      ).join('')
+    : `<tr><td class="empty-state" colspan="${Math.max(cols.length, 1)}">${emptyMsg}</td></tr>`;
   document.getElementById(id).innerHTML =
     `<table><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
 }
 
 function switchTab(which) {
+  previewState.active = which;
   document.getElementById('panelBefore').classList.toggle('hidden', which !== 'before');
   document.getElementById('panelAfter').classList.toggle('hidden',  which !== 'after');
   document.getElementById('tabBefore').classList.toggle('active', which === 'before');
   document.getElementById('tabAfter').classList.toggle('active',  which === 'after');
+  syncPreviewControls();
+  loadPreview(which);
 }
 
 // ── Download ──
 async function doDownload() {
+  clearNotices();
   const fd = new FormData();
   if (uploadToken) fd.append('upload_token', uploadToken);
   else fd.append('file', fileEl.files[0]);
@@ -757,11 +1060,13 @@ async function doDownload() {
       return doDownload();
     }
     let errMsg = 'Erro ao baixar arquivo';
+    let errPayload = { title: 'Falha ao gerar o download', message: errMsg, kind: 'error' };
     try {
       const data = await res.json();
-      errMsg = data.error || errMsg;
+      errPayload = normalizeErrorPayload(data.error, 'Falha ao gerar o download');
+      errMsg = errPayload.message || errMsg;
     } catch {}
-    alert(errMsg);
+    showNotice(errPayload, 'Falha ao gerar o download');
     return;
   }
   const blob = await res.blob();
