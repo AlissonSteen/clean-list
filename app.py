@@ -679,8 +679,18 @@ def process_dataframe(df: pd.DataFrame, config: dict) -> dict:
             split = name_series.str.split(n=1, expand=True)
             first_name = split[0].fillna('').str.capitalize() if 0 in split.columns else pd.Series('', index=result.index)
             last_name = split[1].fillna('').str.title() if 1 in split.columns else pd.Series('', index=result.index)
-            result.insert(result.columns.get_loc(name_col) + 1, 'first_name', first_name)
-            result.insert(result.columns.get_loc(name_col) + 2, 'last_name', last_name)
+            name_pos = result.columns.get_loc(name_col)
+            if 'first_name' in result.columns:
+                result['first_name'] = first_name
+            else:
+                result.insert(name_pos + 1, 'first_name', first_name)
+            if 'last_name' in result.columns:
+                result['last_name'] = last_name
+            else:
+                name_pos = result.columns.get_loc(name_col)
+                first_name_pos = result.columns.get_loc('first_name') if 'first_name' in result.columns else name_pos
+                insert_pos = max(name_pos, first_name_pos) + 1
+                result.insert(insert_pos, 'last_name', last_name)
 
     # ── Reorder columns ──
     ordered = []
@@ -761,6 +771,14 @@ def upload():
 @app.route('/process_stream', methods=['POST'])
 def process_stream():
     config   = json.loads(request.form.get('config', '{}'))
+    try:
+        df, filename, upload_token = load_dataframe_from_request(request)
+    except Exception as e:
+        def generate_error():
+            payload = {'error': classify_exception(e, 'process')}
+            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+        return Response(stream_with_context(generate_error()), mimetype='text/event-stream',
+                        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
     def generate():
         def emit(pct, msg, data=None):
@@ -770,7 +788,6 @@ def process_stream():
 
         try:
             yield from emit(5, 'Lendo arquivo…')
-            df, filename, upload_token = load_dataframe_from_request(request)
             total = len(df)
 
             yield from emit(20, f'{total} linhas encontradas. Processando…')

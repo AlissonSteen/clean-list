@@ -777,6 +777,14 @@ function hideProgress() {
   document.getElementById('progressPct').textContent = '0%';
 }
 
+function shouldRetryWithFile(error) {
+  const payload = normalizeErrorPayload(error, 'Erro');
+  const title = String(payload.title || '').toLowerCase();
+  return title.includes('arquivo não enviado')
+    || title.includes('falha ao ler o arquivo')
+    || title.includes('arquivo sem colunas legíveis');
+}
+
 function streamProcess(cfg, forceFile = false) {
   return new Promise((resolve) => {
     const fd = new FormData();
@@ -801,7 +809,7 @@ function streamProcess(cfg, forceFile = false) {
               try {
                 const payload = JSON.parse(line.slice(5).trim());
                 if (payload.error) {
-                  if (uploadToken && !forceFile && fileEl.files[0]) {
+                  if (uploadToken && !forceFile && fileEl.files[0] && shouldRetryWithFile(payload.error)) {
                     uploadToken = null;
                     resolve(streamProcess(cfg, true));
                     return;
