@@ -3,6 +3,7 @@ import os
 import re
 import json
 import uuid
+import csv
 from collections import OrderedDict
 from flask import Flask, request, jsonify, send_file, render_template, Response, stream_with_context
 import pandas as pd
@@ -527,6 +528,28 @@ def build_preview_payload(df: pd.DataFrame, cols: list[str], config: dict, searc
 
 # ─── File reading ──────────────────────────────────────────────────────────────
 
+def detect_csv_delimiter(sample_text: str) -> str:
+    sample_text = str(sample_text or '').strip()
+    if not sample_text:
+        return ','
+
+    try:
+        dialect = csv.Sniffer().sniff(sample_text, delimiters=',;|\t')
+        if dialect.delimiter:
+            return dialect.delimiter
+    except csv.Error:
+        pass
+
+    candidates = {',': 0, ';': 0, '\t': 0, '|': 0}
+    lines = [line for line in sample_text.splitlines()[:10] if line.strip()]
+    for line in lines:
+        for delimiter in candidates:
+            candidates[delimiter] += line.count(delimiter)
+
+    best_delimiter = max(candidates, key=candidates.get)
+    return best_delimiter if candidates[best_delimiter] > 0 else ','
+
+
 def read_file(file) -> pd.DataFrame:
     name = file.filename.lower()
     raw = file.read()
@@ -534,8 +557,10 @@ def read_file(file) -> pd.DataFrame:
     if name.endswith('.csv'):
         for enc in ('utf-8', 'latin-1', 'cp1252'):
             try:
+                sample = raw[:8192].decode(enc, errors='ignore')
+                delimiter = detect_csv_delimiter(sample)
                 buf.seek(0)
-                return pd.read_csv(buf, encoding=enc, dtype=str)
+                return pd.read_csv(buf, encoding=enc, dtype=str, sep=delimiter)
             except Exception:
                 pass
     elif name.endswith(('.xlsx', '.xls')):
@@ -628,8 +653,21 @@ def process_dataframe(df: pd.DataFrame, config: dict) -> dict:
     }
 
     warnings = []
+    original_total = len(df)
+    metrics = {
+        'original_rows': original_total,
+        'empty_rows_removed': 0,
+        'rows_with_multiple_phones': 0,
+        'extra_rows_from_phone_split': 0,
+        'invalid_phone_entries': 0,
+        'rows_removed_without_phone': 0,
+        'duplicates_found': 0,
+        'duplicates_removed': 0,
+        'final_rows': 0,
+    }
 
     df = clean_dataframe(df)
+    metrics['empty_rows_removed'] = max(original_total - len(df), 0)
 
     # Apply accepted phone fixes before processing
     if phone_col and phone_fixes:
@@ -645,10 +683,14 @@ def process_dataframe(df: pd.DataFrame, config: dict) -> dict:
 
     # ── Handle multiple phones per row (explode) ──
     if phone_col and phone_col in df.columns:
+        rows_before_split = len(df)
         df['_phones'] = df[phone_col].apply(
             lambda v: extract_phones(v) if v.strip() else ['']
         )
+        phone_counts = df['_phones'].apply(len)
+        metrics['rows_with_multiple_phones'] = int((phone_counts > 1).sum())
         df = df.explode('_phones').reset_index(drop=True)
+        metrics['extra_rows_from_phone_split'] = max(len(df) - rows_before_split, 0)
         df['_phones'] = df['_phones'].fillna('').astype(str).replace(
             {'nan': '', 'None': '', 'NaN': ''})
 
@@ -660,6 +702,7 @@ def process_dataframe(df: pd.DataFrame, config: dict) -> dict:
         normalized = df['_phones'].apply(_norm)
 
         bad_mask = normalized.isna() & df['_phones'].str.strip().ne('')
+        metrics['invalid_phone_entries'] = int(bad_mask.sum())
         for idx in df[bad_mask].index:
             warnings.append(f'Linha {idx+2}: telefone inválido "{df["_phones"][idx]}"')
 
@@ -708,17 +751,24 @@ def process_dataframe(df: pd.DataFrame, config: dict) -> dict:
 
     # ── Remove rows without phone ──
     if phone_col and phone_col in result.columns:
+        rows_before_phone_filter = len(result)
         result = result[result[phone_col].astype(str).str.strip().ne('')]
+        metrics['rows_removed_without_phone'] = max(rows_before_phone_filter - len(result), 0)
 
     # ── Duplicates ──
     dup_count = int(result.duplicated(keep='first').sum())
+    metrics['duplicates_found'] = dup_count
     if dup_action == 'remove':
+        before_drop_duplicates = len(result)
         result = result.drop_duplicates()
+        metrics['duplicates_removed'] = max(before_drop_duplicates - len(result), 0)
+    metrics['final_rows'] = len(result)
 
     return {
         'df':        result,
         'dup_count': dup_count,
         'warnings':  warnings,
+        'metrics':   metrics,
     }
 
 
@@ -812,6 +862,7 @@ def process_stream():
                 'total_after':    len(result_df),
                 'dup_count':      result['dup_count'],
                 'warnings':       result['warnings'],
+                'metrics':        result.get('metrics', {}),
                 'misplaced':      misplaced,
             }
             yield from emit(100, 'Concluído!', payload)
@@ -838,7 +889,7 @@ def download():
         result_df = result['df']
         buf = io.BytesIO()
         if fmt == 'csv':
-            result_df.to_csv(buf, index=False, encoding='utf-8-sig')
+            result_df.to_csv(buf, index=False, encoding='utf-8-sig', sep=';')
             buf.seek(0)
             return send_file(buf, mimetype='text/csv',
                              as_attachment=True, download_name=download_name)

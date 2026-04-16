@@ -182,6 +182,45 @@
   .warn-box ul { padding-left: 18px; overflow-y: auto; flex: 1; }
   .warn-box li { font-size: 12px; font-family: var(--mono); color: var(--warn); line-height: 1.7; }
 
+  .summary-box {
+    background: rgba(0,229,160,.06);
+    border: 1px solid rgba(0,229,160,.2);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-bottom: 20px;
+  }
+  .summary-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 10px;
+  }
+  .summary-formula {
+    font-size: 14px;
+    color: var(--text);
+    margin-bottom: 10px;
+  }
+  .summary-formula strong {
+    color: var(--accent);
+    font-family: var(--mono);
+  }
+  .summary-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(220px, 1fr));
+    gap: 8px 16px;
+  }
+  .summary-item {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: var(--mono);
+  }
+  .summary-item strong {
+    color: var(--text);
+  }
+  @media (max-width: 700px) {
+    .summary-list { grid-template-columns: 1fr; }
+  }
+
   /* Tab switcher for preview */
   .preview-tabs {
     display: flex; border-bottom: 1px solid var(--border); margin-bottom: 16px;
@@ -388,6 +427,7 @@
     </div>
 
     <div class="stats" id="statsBar"></div>
+    <div id="summaryBox"></div>
     <div id="warnBox"></div>
 
     <div class="preview-tabs">
@@ -1013,12 +1053,43 @@ function showResults(data) {
   s3.classList.remove('hidden');
   activate('step3', true);
   document.getElementById('b3').classList.remove('dim');
+  const metrics = data.metrics || {};
+  const originalRows = metrics.original_rows ?? data.total_before ?? 0;
+  const extraRows = metrics.extra_rows_from_phone_split ?? Math.max((data.total_after ?? 0) - (data.total_before ?? 0), 0);
+  const emptyRowsRemoved = metrics.empty_rows_removed ?? 0;
+  const rowsRemovedWithoutPhone = metrics.rows_removed_without_phone ?? 0;
+  const duplicatesFound = metrics.duplicates_found ?? data.dup_count ?? 0;
+  const duplicatesRemoved = metrics.duplicates_removed ?? 0;
+  const invalidPhoneEntries = metrics.invalid_phone_entries ?? data.warnings.length ?? 0;
+  const finalRows = metrics.final_rows ?? data.total_after ?? 0;
+  const totalRemoved = emptyRowsRemoved + rowsRemovedWithoutPhone + duplicatesRemoved;
 
   document.getElementById('statsBar').innerHTML = `
-    <div class="stat"><div class="stat-val">${data.total_before}</div><div class="stat-key">Linhas originais</div></div>
-    <div class="stat"><div class="stat-val">${data.total_after}</div><div class="stat-key">Linhas higienizadas</div></div>
-    <div class="stat"><div class="stat-val">${data.dup_count}</div><div class="stat-key">Duplicatas</div></div>
+    <div class="stat"><div class="stat-val">${originalRows}</div><div class="stat-key">Linhas originais</div></div>
+    <div class="stat"><div class="stat-val">${extraRows}</div><div class="stat-key">Expandidas por telefone</div></div>
+    <div class="stat"><div class="stat-val">${totalRemoved}</div><div class="stat-key">Removidas no processo</div></div>
+    <div class="stat"><div class="stat-val">${finalRows}</div><div class="stat-key">Linhas finais</div></div>
     <div class="stat"><div class="stat-val">${data.warnings.length}</div><div class="stat-key">Avisos</div></div>
+  `;
+
+  document.getElementById('summaryBox').innerHTML = `
+    <div class="summary-box">
+      <div class="summary-title">Resumo da conta</div>
+      <div class="summary-formula">
+        <strong>${originalRows}</strong> originais
+        + <strong>${extraRows}</strong> expansões
+        - <strong>${totalRemoved}</strong> removidas
+        = <strong>${finalRows}</strong> finais
+      </div>
+      <div class="summary-list">
+        <div class="summary-item">Linhas vazias removidas: <strong>${emptyRowsRemoved}</strong></div>
+        <div class="summary-item">Linhas com mais de um telefone: <strong>${metrics.rows_with_multiple_phones ?? 0}</strong></div>
+        <div class="summary-item">Entradas de telefone inválidas: <strong>${invalidPhoneEntries}</strong></div>
+        <div class="summary-item">Linhas removidas por ficar sem telefone: <strong>${rowsRemovedWithoutPhone}</strong></div>
+        <div class="summary-item">Duplicatas encontradas: <strong>${duplicatesFound}</strong></div>
+        <div class="summary-item">Duplicatas removidas: <strong>${duplicatesRemoved}</strong></div>
+      </div>
+    </div>
   `;
 
   const wb = document.getElementById('warnBox');
@@ -1054,19 +1125,53 @@ function switchTab(which) {
 }
 
 // ── Download ──
+function submitNativeDownload() {
+  let iframe = document.getElementById('downloadFrame');
+  if (!iframe) {
+    iframe = document.createElement('iframe');
+    iframe.id = 'downloadFrame';
+    iframe.name = 'downloadFrame';
+    iframe.style.display = 'none';
+    document.body.appendChild(iframe);
+  }
+
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/download';
+  form.target = 'downloadFrame';
+  form.style.display = 'none';
+
+  const fields = {
+    upload_token: uploadToken,
+    config: JSON.stringify(lastConfig),
+    format: downloadFmt,
+  };
+
+  Object.entries(fields).forEach(([name, value]) => {
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = name;
+    input.value = value ?? '';
+    form.appendChild(input);
+  });
+
+  document.body.appendChild(form);
+  form.submit();
+  setTimeout(() => form.remove(), 1000);
+}
+
 async function doDownload() {
   clearNotices();
+  if (uploadToken) {
+    submitNativeDownload();
+    return;
+  }
   const fd = new FormData();
-  if (uploadToken) fd.append('upload_token', uploadToken);
-  else fd.append('file', fileEl.files[0]);
+  fd.append('file', fileEl.files[0]);
   fd.append('config', JSON.stringify(lastConfig));
   fd.append('format', downloadFmt);
   const res  = await fetch('/download', { method: 'POST', body: fd });
   if (!res.ok) {
-    if (uploadToken && fileEl.files[0]) {
-      uploadToken = null;
-      return doDownload();
-    }
     let errMsg = 'Erro ao baixar arquivo';
     let errPayload = { title: 'Falha ao gerar o download', message: errMsg, kind: 'error' };
     try {
@@ -1085,8 +1190,14 @@ async function doDownload() {
   const fallbackBase = (fileEl.files[0]?.name || 'arquivo').replace(/\.[^.]+$/, '');
   const fallbackName = `${fallbackBase}_higienizado.${downloadFmt}`;
   const downloadName = decodeURIComponent(match?.[1] || match?.[2] || fallbackName);
-  a.href = url; a.download = downloadName; a.click();
-  URL.revokeObjectURL(url);
+  a.href = url;
+  a.download = downloadName;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+    a.remove();
+  }, 1000);
 }
 
 function setFmt(el) {
