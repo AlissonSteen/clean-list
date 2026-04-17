@@ -391,10 +391,15 @@ def infer_date_columns(df: pd.DataFrame, sample_size: int = 200) -> list[str]:
     return date_cols
 
 
-def build_preview_meta(df: pd.DataFrame, config: dict) -> dict:
+def build_preview_meta(df: pd.DataFrame, config: dict, duplicate_review: dict | None = None) -> dict:
     name_col = config.get('name_col') if config.get('name_col') in df.columns else None
     phone_col = config.get('phone_col') if config.get('phone_col') in df.columns else None
     date_cols = infer_date_columns(df)
+    duplicate_review = duplicate_review or {}
+    has_duplicate_filters = bool(duplicate_review.get('available'))
+    has_duplicate_review = bool(duplicate_review.get('enabled'))
+    duplicate_removed = bool(duplicate_review.get('removed'))
+    duplicate_count = int(duplicate_review.get('count', 0) or 0)
 
     phone_filter_options = [{'value': 'all', 'label': 'Todos os registros'}]
     if phone_col:
@@ -403,6 +408,12 @@ def build_preview_meta(df: pd.DataFrame, config: dict) -> dict:
             {'value': 'phone_missing', 'label': 'Sem telefone'},
             {'value': 'phone_valid', 'label': 'Telefones válidos'},
             {'value': 'phone_invalid', 'label': 'Telefones inválidos'},
+        ])
+    if has_duplicate_filters:
+        phone_filter_options.extend([
+            {'value': 'dup_all', 'label': f'Grupo de duplicadas ({duplicate_count})'},
+            {'value': 'dup_kept', 'label': 'Original do grupo'},
+            {'value': 'dup_removed', 'label': 'Duplicadas removidas' if duplicate_removed else 'Duplicadas do grupo'},
         ])
 
     sort_options = [{'value': '', 'label': 'Sem ordenação'}]
@@ -428,10 +439,26 @@ def build_preview_meta(df: pd.DataFrame, config: dict) -> dict:
         'date_columns': date_cols,
         'phone_filter_options': phone_filter_options,
         'sort_options': sort_options,
+        'duplicate_review': {
+            'available': has_duplicate_filters,
+            'enabled': has_duplicate_review,
+            'count': duplicate_count,
+        },
     }
 
 
-def apply_phone_filter(frame: pd.DataFrame, phone_col: str | None, phone_filter: str) -> pd.DataFrame:
+def apply_record_filter(frame: pd.DataFrame, phone_col: str | None, phone_filter: str) -> pd.DataFrame:
+    if phone_filter.startswith('dup_'):
+        if 'STATUS_DUPLICATA' not in frame.columns:
+            return frame.iloc[0:0]
+        if phone_filter == 'dup_all':
+            return frame
+        if phone_filter == 'dup_kept':
+            return frame.loc[frame['STATUS_DUPLICATA'].eq('Original mantida')]
+        if phone_filter == 'dup_removed':
+            return frame.loc[frame['STATUS_DUPLICATA'].isin(['Duplicada removida', 'Duplicada mantida'])]
+        return frame
+
     if not phone_col or phone_col not in frame.columns or phone_filter == 'all':
         return frame
 
@@ -496,11 +523,12 @@ def apply_preview_sort(frame: pd.DataFrame, sort_mode: str) -> pd.DataFrame:
 
 def build_preview_payload(df: pd.DataFrame, cols: list[str], config: dict, search: str = '', limit: int = 10,
                           phone_filter: str = 'all', sort_mode: str = '',
-                          date_col: str | None = None, date_from: str = '', date_to: str = '') -> dict:
+                          date_col: str | None = None, date_from: str = '', date_to: str = '',
+                          duplicate_review: dict | None = None) -> dict:
     frame = df.copy()
     frame = frame.astype(str).replace({'nan': '', 'None': '', '<NA>': ''})
     total_rows = len(frame)
-    meta = build_preview_meta(frame, config)
+    meta = build_preview_meta(frame, config, duplicate_review)
 
     search = str(search or '').strip()
     if search:
@@ -508,7 +536,7 @@ def build_preview_payload(df: pd.DataFrame, cols: list[str], config: dict, searc
         mask = frame.apply(lambda col: col.str.contains(escaped, case=False, na=False))
         frame = frame.loc[mask.any(axis=1)]
 
-    frame = apply_phone_filter(frame, meta.get('phone_col'), phone_filter)
+    frame = apply_record_filter(frame, meta.get('phone_col'), phone_filter)
     frame = apply_date_filter(frame, date_col, date_from, date_to)
     filtered_total = len(frame)
     frame = apply_preview_sort(frame, sort_mode)
@@ -710,6 +738,8 @@ def process_dataframe(df: pd.DataFrame, config: dict) -> dict:
         df[phone_col] = normalized.fillna('')
         df = df.drop(columns=['_phones'])
 
+    dedupe_basis = None
+
     # ── Select columns ──
     cols_to_keep = [c for c in keep_cols if c in df.columns]
     result = df[cols_to_keep].copy()
@@ -753,14 +783,35 @@ def process_dataframe(df: pd.DataFrame, config: dict) -> dict:
     if phone_col and phone_col in result.columns:
         rows_before_phone_filter = len(result)
         result = result[result[phone_col].astype(str).str.strip().ne('')]
+        dedupe_basis = result[phone_col].fillna('').astype(str).str.strip()
         metrics['rows_removed_without_phone'] = max(rows_before_phone_filter - len(result), 0)
+    else:
+        dedupe_basis = pd.Series('', index=result.index, dtype=str)
 
     # ── Duplicates ──
-    dup_count = int(result.duplicated(keep='first').sum())
+    duplicate_review_df = pd.DataFrame()
+    duplicate_group_mask = dedupe_basis.duplicated(keep=False)
+    duplicate_row_mask = dedupe_basis.duplicated(keep='first')
+    duplicate_group = result.loc[duplicate_group_mask].copy()
+    if not duplicate_group.empty:
+        duplicate_group.insert(
+            0,
+            'STATUS_DUPLICATA',
+            np.where(
+                duplicate_row_mask.loc[duplicate_group.index],
+                'Duplicada removida' if dup_action == 'remove' else 'Duplicada mantida',
+                'Original mantida'
+            )
+        )
+        duplicate_review_df = duplicate_group
+
+    dup_count = int(duplicate_row_mask.sum())
     metrics['duplicates_found'] = dup_count
     if dup_action == 'remove':
         before_drop_duplicates = len(result)
-        result = result.drop_duplicates()
+        keep_mask = ~duplicate_row_mask
+        result = result.loc[keep_mask]
+        dedupe_basis = dedupe_basis.loc[keep_mask]
         metrics['duplicates_removed'] = max(before_drop_duplicates - len(result), 0)
     metrics['final_rows'] = len(result)
 
@@ -769,6 +820,7 @@ def process_dataframe(df: pd.DataFrame, config: dict) -> dict:
         'dup_count': dup_count,
         'warnings':  warnings,
         'metrics':   metrics,
+        'duplicate_review_df': duplicate_review_df,
     }
 
 
@@ -924,9 +976,20 @@ def preview():
     try:
         if stage == 'after':
             result = get_or_process_result(df, filename, upload_token, config)
-            preview_df = result['df']
+            duplicate_review_df = result.get('duplicate_review_df')
+            duplicate_review = {
+                'available': True,
+                'enabled': bool(duplicate_review_df is not None and not duplicate_review_df.empty),
+                'removed': bool(result.get('metrics', {}).get('duplicates_removed', 0)),
+                'count': int(result.get('metrics', {}).get('duplicates_found', 0)),
+            }
+            if phone_filter.startswith('dup_') and duplicate_review['enabled']:
+                preview_df = duplicate_review_df
+            else:
+                preview_df = result['df']
         else:
             preview_df = df.fillna('').astype(str)
+            duplicate_review = {'available': False, 'enabled': False, 'removed': False, 'count': 0}
 
         cols = list(preview_df.columns)
         payload = build_preview_payload(
@@ -940,6 +1003,7 @@ def preview():
             date_col=date_col,
             date_from=date_from,
             date_to=date_to,
+            duplicate_review=duplicate_review,
         )
         return jsonify(payload)
     except Exception as e:
