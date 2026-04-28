@@ -70,26 +70,35 @@ def normalize_phone(digits: str):
     digits = only_digits(digits)
     if not digits:
         return None
-    if digits.startswith('55') and len(digits) in (12, 13):
+    while digits.startswith('55') and len(digits) > 11:
         digits = digits[2:]
-    if len(digits) not in (10, 11):
+    if len(digits) < 8 or len(digits) > 11:
         return None
     ddd = int(digits[:2])
     if not 11 <= ddd <= 99:
         return None
     number = digits[2:]
-    if len(number) == 8:
-        if number[0] in '2345':
-            return f'55{ddd:02d}{number}'
-        if number[0] in '6789':
-            number = '9' + number
+
+    if len(number) in (6, 7):
+        return f'55{ddd:02d}{number}'
+
+    if ddd < 28:
+        if len(number) == 8:
+            number = f'9{number}'
+        elif len(number) == 9:
+            if not number.startswith('9'):
+                return None
         else:
             return None
-    elif len(number) == 9:
-        if not number.startswith('9'):
-            return None
     else:
-        return None
+        if len(number) == 9:
+            if number.startswith('9'):
+                number = number[1:]
+            else:
+                return None
+        elif len(number) != 8:
+            return None
+
     return f'55{ddd:02d}{number}'
 
 
@@ -578,6 +587,46 @@ def detect_csv_delimiter(sample_text: str) -> str:
     return best_delimiter if candidates[best_delimiter] > 0 else ','
 
 
+def read_excel_rows(buf: io.BytesIO) -> pd.DataFrame:
+    import openpyxl
+
+    buf.seek(0)
+    wb = openpyxl.load_workbook(buf, read_only=True, data_only=True)
+    ws = wb[wb.sheetnames[0]]
+
+    rows = []
+    headers = None
+    empty_streak = 0
+    saw_data = False
+    max_empty_streak = 2000
+
+    for row in ws.iter_rows(values_only=True):
+        values = [str(cell).strip() if cell is not None else '' for cell in row]
+        if not any(values):
+            if saw_data:
+                empty_streak += 1
+                if empty_streak >= max_empty_streak:
+                    break
+            continue
+
+        empty_streak = 0
+        saw_data = True
+
+        if headers is None:
+            headers = values
+            continue
+
+        if len(values) < len(headers):
+            values += [''] * (len(headers) - len(values))
+        elif len(values) > len(headers):
+            values = values[:len(headers)]
+        rows.append(values)
+
+    if headers is None:
+        return pd.DataFrame()
+    return pd.DataFrame(rows, columns=headers).astype(str)
+
+
 def read_file(file) -> pd.DataFrame:
     name = file.filename.lower()
     raw = file.read()
@@ -592,8 +641,7 @@ def read_file(file) -> pd.DataFrame:
             except Exception:
                 pass
     elif name.endswith(('.xlsx', '.xls')):
-        buf.seek(0)
-        return pd.read_excel(buf, dtype=str)
+        return read_excel_rows(buf)
     elif name.endswith('.pdf'):
         import pdfplumber
         rows = []
