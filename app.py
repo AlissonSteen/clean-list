@@ -20,11 +20,41 @@ RESULT_CACHE = OrderedDict()
 def extract_phones(raw: str):
     raw = str(raw).strip()
     parts = re.split(r'[;|/\\\n]+|(?<!\d),(?!\d{3})', raw)
-    return [re.sub(r'[^\d]', '', p.strip()) for p in parts if re.sub(r'[^\d]', '', p.strip())]
+    cleaned_parts = [only_digits(p.strip()) for p in parts]
+    return [digits for digits in cleaned_parts if digits]
+
+
+def parse_list_cell(raw: str) -> list[str]:
+    text = str(raw or '').strip()
+    if not text:
+        return []
+
+    normalized = (
+        text.replace('“', '"')
+        .replace('”', '"')
+        .replace('’', "'")
+        .replace('‘', "'")
+    )
+
+    try:
+        parsed = next(csv.reader([normalized], skipinitialspace=True))
+        values = [re.sub(r'\s+', ' ', value).strip().strip('"').strip("'").strip() for value in parsed]
+        values = [value for value in values if value]
+        if values:
+            return values
+    except Exception:
+        pass
+
+    fallback = [re.sub(r'\s+', ' ', value).strip().strip('"').strip("'").strip()
+                for value in re.split(r'[;|/\n]+', normalized)]
+    return [value for value in fallback if value]
 
 
 def only_digits(val: str) -> str:
-    return re.sub(r'[^\d]', '', str(val))
+    text = str(val).strip()
+    if re.fullmatch(r'\d+\.0+', text):
+        text = text.split('.', 1)[0]
+    return re.sub(r'[^\d]', '', text)
 
 
 def is_repeated_digits(digits: str) -> bool:
@@ -122,6 +152,13 @@ def split_name(full: str):
     return parts[0].capitalize(), ' '.join(p.capitalize() for p in parts[1:])
 
 
+def normalize_person_name(full: str) -> str:
+    text = re.sub(r'\s+', ' ', str(full or '')).strip().strip('"').strip("'").strip()
+    if not text:
+        return ''
+    return ' '.join(part.capitalize() for part in text.split())
+
+
 def infer_phone_column(df: pd.DataFrame) -> str | None:
     best_col = None
     best_score = 0.0
@@ -158,14 +195,7 @@ def infer_name_column(df: pd.DataFrame, phone_col: str | None = None) -> str | N
             continue
 
         def _looks_like_name(val: str) -> bool:
-            if looks_like_phone(val):
-                return False
-            cleaned = re.sub(r'[^A-Za-zÀ-ÿ\s]', ' ', str(val)).strip()
-            parts = [p for p in cleaned.split() if p]
-            if len(parts) < 2:
-                return False
-            letters = re.sub(r'[^A-Za-zÀ-ÿ]', '', cleaned)
-            return len(letters) >= 5
+            return looks_like_person_name_value(val, allow_single_word=True)
 
         name_hits = sample.apply(_looks_like_name).sum()
         score = name_hits / len(sample)
@@ -186,12 +216,167 @@ def infer_columns(df: pd.DataFrame) -> dict:
     }
 
 
+def is_known_header_name(value: str) -> bool:
+    normalized = re.sub(r'[^a-z0-9]', '', str(value).lower())
+    known_tokens = (
+        'nome', 'name', 'telefone', 'phone', 'cel', 'celular', 'whatsapp',
+        'cpf', 'cnpj', 'email', 'mail', 'contato', 'cliente', 'titular',
+        'valor', 'data', 'vencimento', 'parcela', 'documento', 'doc',
+    )
+    return any(token in normalized for token in known_tokens)
+
+
+def looks_like_person_name_value(value: str, allow_single_word: bool = False) -> bool:
+    text = str(value or '').strip()
+    if not text or looks_like_phone(text, reject_documents=False) or looks_like_document_id(text):
+        return False
+    if is_known_header_name(text):
+        return False
+
+    cleaned = re.sub(r'[^A-Za-zÀ-ÿ\s]', ' ', text).strip()
+    parts = [part for part in cleaned.split() if part]
+    if not parts:
+        return False
+
+    letters = re.sub(r'[^A-Za-zÀ-ÿ]', '', cleaned)
+    if len(parts) >= 2:
+        return len(letters) >= 5
+
+    return allow_single_word and len(letters) >= 3 and text[:1].isupper()
+
+
+def looks_like_headerless_dataframe(df: pd.DataFrame) -> bool:
+    if df.empty or len(df.columns) == 0:
+        return False
+
+    header_values = [str(col).strip() for col in df.columns]
+    populated_header_values = [value for value in header_values if value]
+    if not populated_header_values:
+        return False
+    if any(is_known_header_name(value) for value in populated_header_values):
+        return False
+
+    data_like_hits = 0
+    for value in populated_header_values:
+        if looks_like_phone(value, reject_documents=False):
+            data_like_hits += 1
+            continue
+        if looks_like_document_id(value):
+            data_like_hits += 1
+            continue
+        if looks_like_person_name_value(value, allow_single_word=True):
+            data_like_hits += 1
+
+    required_hits = max(1, (len(populated_header_values) + 1) // 2)
+    return data_like_hits >= required_hits
+
+
+def generate_headers_from_samples(values: list[str]) -> list[str]:
+    generated = []
+    counters = {'nome': 0, 'telefone': 0, 'cpf': 0, 'coluna': 0}
+
+    for value in values:
+        text = str(value).strip()
+        if looks_like_phone(text, reject_documents=False):
+            base = 'telefone'
+        elif looks_like_document_id(text):
+            base = 'cpf'
+        elif re.search(r'[A-Za-zÀ-ÿ]', text):
+            base = 'nome'
+        else:
+            base = 'coluna'
+
+        counters[base] += 1
+        suffix = '' if counters[base] == 1 else f'_{counters[base]}'
+        generated.append(f'{base}{suffix}')
+
+    return generated
+
+
+def restore_headerless_first_row(df: pd.DataFrame) -> pd.DataFrame:
+    if not looks_like_headerless_dataframe(df):
+        return df
+
+    first_row = [str(col).strip() for col in df.columns]
+    restored = pd.concat(
+        [pd.DataFrame([first_row], columns=df.columns), df.reset_index(drop=True)],
+        ignore_index=True,
+    )
+    restored.columns = generate_headers_from_samples(first_row)
+    return restored.astype(str)
+
+
+def normalize_imported_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df.astype(str)
+
+    normalized = df.fillna('').astype(str).copy()
+    normalized = normalized.loc[normalized.apply(lambda row: row.str.strip().ne('').any(), axis=1)]
+    if normalized.empty:
+        return normalized.reset_index(drop=True)
+
+    non_empty_cols = normalized.apply(lambda col: col.str.strip().ne('').any())
+    normalized = normalized.loc[:, non_empty_cols]
+    if normalized.empty:
+        return normalized.reset_index(drop=True)
+
+    new_columns = []
+    used_names: dict[str, int] = {}
+
+    for idx, col in enumerate(normalized.columns):
+        label = str(col).strip()
+        if not label or label.lower().startswith('unnamed:'):
+            sample = normalized.iloc[:, idx].astype(str).str.strip()
+            sample_values = sample[sample.ne('')].head(1).tolist()
+            if sample_values:
+                label = generate_headers_from_samples(sample_values)[0]
+            else:
+                label = 'coluna'
+
+        count = used_names.get(label, 0) + 1
+        used_names[label] = count
+        if count > 1:
+            label = f'{label}_{count}'
+        new_columns.append(label)
+
+    normalized.columns = new_columns
+    return normalized.reset_index(drop=True)
+
+
 def build_download_name(original_name: str, fmt: str) -> str:
     base_name = os.path.basename(original_name or 'arquivo')
     root, _ = os.path.splitext(base_name)
     root = root or 'arquivo'
     ext = 'csv' if fmt == 'csv' else 'xlsx'
     return f'{root}_higienizado.{ext}'
+
+
+def build_split_download_name(original_name: str, fmt: str, part_index: int, total_parts: int) -> str:
+    base_name = os.path.basename(original_name or 'arquivo')
+    root, _ = os.path.splitext(base_name)
+    root = root or 'arquivo'
+    ext = 'csv' if fmt == 'csv' else 'xlsx'
+    width = max(2, len(str(total_parts)))
+    return f'{root}_higienizado_parte_{part_index:0{width}d}_de_{total_parts:0{width}d}.{ext}'
+
+
+def split_dataframe_evenly(df: pd.DataFrame, total_parts: int) -> list[pd.DataFrame]:
+    total_rows = len(df)
+    total_parts = max(1, int(total_parts))
+    if total_rows > 0:
+        total_parts = min(total_parts, total_rows)
+    if total_parts == 1 or df.empty:
+        return [df]
+
+    base_size, remainder = divmod(total_rows, total_parts)
+    slices = []
+    start = 0
+    for part_idx in range(total_parts):
+        part_size = base_size + (1 if part_idx < remainder else 0)
+        end = start + part_size
+        slices.append(df.iloc[start:end].copy())
+        start = end
+    return slices
 
 
 def make_error_payload(title: str, message: str, hint: str = '', kind: str = 'error',
@@ -360,6 +545,18 @@ def load_dataframe_from_request(req) -> tuple[pd.DataFrame, str, str | None]:
     return df, file.filename, None
 
 
+def apply_row_range(df: pd.DataFrame, config: dict) -> pd.DataFrame:
+    if not config.get('use_row_range'):
+        return df
+
+    total_rows = len(df)
+    start_line = max(1, int(config.get('row_start', 1) or 1))
+    end_line = max(start_line, int(config.get('row_end', total_rows) or total_rows))
+    start_idx = min(start_line - 1, total_rows)
+    end_idx = min(end_line, total_rows)
+    return df.iloc[start_idx:end_idx].copy()
+
+
 def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     cleaned = df.fillna('').astype(str).replace({'nan': '', 'None': '', '<NA>': ''})
     cleaned = cleaned.apply(lambda col: col.str.strip())
@@ -370,7 +567,8 @@ def get_or_process_result(df: pd.DataFrame, filename: str, upload_token: str | N
     result_cache_key = build_result_cache_key(upload_token, filename, config)
     result = get_processed_result(result_cache_key)
     if result is None:
-        result = process_dataframe(df, config)
+        scoped_df = apply_row_range(df, config)
+        result = process_dataframe(scoped_df, config)
         store_processed_result(result_cache_key, result)
     return result
 
@@ -637,11 +835,12 @@ def read_file(file) -> pd.DataFrame:
                 sample = raw[:8192].decode(enc, errors='ignore')
                 delimiter = detect_csv_delimiter(sample)
                 buf.seek(0)
-                return pd.read_csv(buf, encoding=enc, dtype=str, sep=delimiter)
+                df = pd.read_csv(buf, encoding=enc, dtype=str, sep=delimiter)
+                return normalize_imported_dataframe(restore_headerless_first_row(df))
             except Exception:
                 pass
     elif name.endswith(('.xlsx', '.xls')):
-        return read_excel_rows(buf)
+        return normalize_imported_dataframe(restore_headerless_first_row(read_excel_rows(buf)))
     elif name.endswith('.pdf'):
         import pdfplumber
         rows = []
@@ -653,7 +852,8 @@ def read_file(file) -> pd.DataFrame:
                         rows.append([str(c) if c else '' for c in row])
         if not rows:
             return pd.DataFrame()
-        return pd.DataFrame(rows[1:], columns=rows[0]).astype(str)
+        pdf_df = pd.DataFrame(rows[1:], columns=rows[0]).astype(str)
+        return normalize_imported_dataframe(restore_headerless_first_row(pdf_df))
     raise ValueError(f'Formato não suportado: {name}')
 
 
@@ -749,7 +949,7 @@ def process_dataframe(df: pd.DataFrame, config: dict) -> dict:
     if phone_col and phone_fixes:
         for row_idx, fix in phone_fixes.items():
             if row_idx in df.index:
-                norm_phone = normalize_phone(re.sub(r'[^\d]', '', str(fix.get('normalized', ''))))
+                norm_phone = normalize_phone(str(fix.get('normalized', '')))
                 if not norm_phone:
                     continue
                 df.at[row_idx, phone_col] = norm_phone
@@ -763,17 +963,31 @@ def process_dataframe(df: pd.DataFrame, config: dict) -> dict:
         df['_phones'] = df[phone_col].apply(
             lambda v: extract_phones(v) if v.strip() else ['']
         )
+        if name_col and name_col in df.columns:
+            cleaned_names = df[name_col].fillna('').astype(str).apply(normalize_person_name)
+            parsed_names = df[name_col].fillna('').astype(str).apply(parse_list_cell)
+            df['_paired_names'] = [
+                [normalize_person_name(name) for name in names]
+                if len(phones) > 1 and len(names) == len(phones) else
+                [original_name] * len(phones)
+                for original_name, names, phones in zip(cleaned_names, parsed_names, df['_phones'])
+            ]
         phone_counts = df['_phones'].apply(len)
         metrics['rows_with_multiple_phones'] = int((phone_counts > 1).sum())
-        df = df.explode('_phones').reset_index(drop=True)
+        explode_cols = ['_phones']
+        if '_paired_names' in df.columns:
+            explode_cols.append('_paired_names')
+        df = df.explode(explode_cols).reset_index(drop=True)
         metrics['extra_rows_from_phone_split'] = max(len(df) - rows_before_split, 0)
         df['_phones'] = df['_phones'].fillna('').astype(str).replace(
             {'nan': '', 'None': '', 'NaN': ''})
+        if '_paired_names' in df.columns:
+            df[name_col] = df['_paired_names'].fillna('').astype(str)
 
         def _norm(v):
             if not isinstance(v, str):
                 return None
-            return normalize_phone(re.sub(r'[^\d]', '', v))
+            return normalize_phone(v)
 
         normalized = df['_phones'].apply(_norm)
 
@@ -784,7 +998,10 @@ def process_dataframe(df: pd.DataFrame, config: dict) -> dict:
 
         # Keep only normalized phones in the final file.
         df[phone_col] = normalized.fillna('')
-        df = df.drop(columns=['_phones'])
+        drop_cols = ['_phones']
+        if '_paired_names' in df.columns:
+            drop_cols.append('_paired_names')
+        df = df.drop(columns=drop_cols)
 
     dedupe_basis = None
 
@@ -794,7 +1011,7 @@ def process_dataframe(df: pd.DataFrame, config: dict) -> dict:
 
     # ── Name handling ──
     if name_col and name_col in result.columns:
-        name_series = result[name_col].astype(str).str.strip()
+        name_series = result[name_col].astype(str).apply(normalize_person_name)
         result[name_col] = name_series
         if split_names:
             split = name_series.str.split(n=1, expand=True)
@@ -938,7 +1155,8 @@ def process_stream():
 
         try:
             yield from emit(5, 'Lendo arquivo…')
-            total = len(df)
+            scoped_df = apply_row_range(df, config)
+            total = len(scoped_df)
 
             yield from emit(20, f'{total} linhas encontradas. Processando…')
             result = get_or_process_result(df, filename, upload_token, config)
@@ -948,7 +1166,7 @@ def process_stream():
             phone_col = config.get('phone_col')
             misplaced = []
             if phone_col and not config.get('phone_fixes'):
-                df_clean = clean_dataframe(df)
+                df_clean = clean_dataframe(scoped_df)
                 misplaced = detect_misplaced_phones(df_clean, phone_col, config.get('keep_cols', []))
 
             yield from emit(85, 'Finalizando…')
@@ -956,7 +1174,7 @@ def process_stream():
             payload = {
                 'columns_before': list(df.columns),
                 'columns_after':  list(result_df.columns),
-                'preview_before': df.head(10).to_dict(orient='records'),
+                'preview_before': scoped_df.head(10).to_dict(orient='records'),
                 'preview_after':  result_df.head(10).to_dict(orient='records'),
                 'total_before':   total,
                 'total_after':    len(result_df),
@@ -979,14 +1197,24 @@ def process_stream():
 def download():
     config = json.loads(request.form.get('config', '{}'))
     fmt    = request.form.get('format', 'xlsx')
+    total_parts = max(1, int(request.form.get('total_parts', '1') or '1'))
+    part_index = max(1, int(request.form.get('part_index', '1') or '1'))
     try:
         df, filename, upload_token = load_dataframe_from_request(request)
     except ValueError as e:
         return jsonify_error(e, 400, 'download')
     try:
-        download_name = build_download_name(filename, fmt)
         result = get_or_process_result(df, filename, upload_token, config)
         result_df = result['df']
+        parts = split_dataframe_evenly(result_df, total_parts)
+        if part_index > len(parts):
+            raise ValueError('Parte de download inválida')
+        result_df = parts[part_index - 1]
+        download_name = (
+            build_split_download_name(filename, fmt, part_index, total_parts)
+            if total_parts > 1 else
+            build_download_name(filename, fmt)
+        )
         buf = io.BytesIO()
         if fmt == 'csv':
             result_df.to_csv(buf, index=False, encoding='utf-8-sig', sep=';')
@@ -1022,6 +1250,7 @@ def preview():
     except ValueError as e:
         return jsonify_error(e, 400, 'preview')
     try:
+        scoped_df = apply_row_range(df, config)
         if stage == 'after':
             result = get_or_process_result(df, filename, upload_token, config)
             duplicate_review_df = result.get('duplicate_review_df')
@@ -1036,7 +1265,7 @@ def preview():
             else:
                 preview_df = result['df']
         else:
-            preview_df = df.fillna('').astype(str)
+            preview_df = scoped_df.fillna('').astype(str)
             duplicate_review = {'available': False, 'enabled': False, 'removed': False, 'count': 0}
 
         cols = list(preview_df.columns)

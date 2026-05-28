@@ -129,6 +129,41 @@
   .toggle-row:hover { border-color: var(--accent); }
   .toggle-row label { font-size: 14px; font-weight: 500; cursor: pointer; white-space: nowrap; }
   .toggle-row label span { color: var(--accent); font-family: var(--mono); font-size: 13px; }
+  .range-panel {
+    margin-top: 12px;
+    padding: 14px 16px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+  }
+  .range-panel.hidden { display: none; }
+  .range-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-top: 10px;
+  }
+  .range-input {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    outline: none;
+  }
+  .range-input:focus { border-color: var(--accent); }
+  .range-help {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--muted);
+    font-family: var(--mono);
+  }
+  @media (max-width: 600px) {
+    .range-grid { grid-template-columns: 1fr; }
+  }
   .sw { position: relative; width: 42px; height: 22px; flex-shrink: 0; }
   .sw input { opacity: 0; width: 0; height: 0; }
   .sw-track {
@@ -164,8 +199,9 @@
   }
   @keyframes rot { to { transform: rotate(360deg); } }
 
-  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 22px; }
-  @media (max-width: 600px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 22px; }
+  @media (max-width: 600px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 420px) { .stats { grid-template-columns: 1fr; } }
   .stat {
     background: var(--surface2); border: 1px solid var(--border);
     border-radius: 10px; padding: 14px 16px;
@@ -288,6 +324,50 @@
     cursor: pointer; transition: all .15s;
   }
   .fmt-pill.on { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+  .split-box {
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid rgba(46,46,69,.65);
+  }
+  .split-grid {
+    display: grid;
+    grid-template-columns: minmax(180px, 220px) 1fr;
+    gap: 14px;
+    align-items: end;
+    margin-bottom: 14px;
+  }
+  .split-help {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: var(--mono);
+  }
+  .split-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 10px;
+  }
+  .split-download {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+  }
+  .split-download strong {
+    color: var(--text);
+    font-size: 13px;
+  }
+  .split-download span {
+    color: var(--muted);
+    font-size: 12px;
+    font-family: var(--mono);
+  }
+  @media (max-width: 700px) {
+    .split-grid { grid-template-columns: 1fr; }
+  }
 
   .notice-stack {
     position: fixed; top: 18px; right: 18px; z-index: 350;
@@ -402,6 +482,31 @@
       </label>
     </div>
 
+    <div class="toggle-row" style="margin-top:12px;" onclick="toggleRowRange()">
+      <label for="useRowRange">
+        Higienizar apenas um <span>intervalo de linhas</span>
+      </label>
+      <label class="sw" onclick="event.stopPropagation()">
+        <input type="checkbox" id="useRowRange"/>
+        <span class="sw-track"></span>
+      </label>
+    </div>
+
+    <div class="range-panel hidden" id="rowRangePanel">
+      <div class="field-label">Intervalo da base original</div>
+      <div class="range-grid">
+        <div class="field-group">
+          <div class="field-label">Linha inicial</div>
+          <input class="range-input" id="rowStart" type="number" min="1" placeholder="Ex.: 50"/>
+        </div>
+        <div class="field-group">
+          <div class="field-label">Linha final</div>
+          <input class="range-input" id="rowEnd" type="number" min="1" placeholder="Ex.: 100"/>
+        </div>
+      </div>
+      <div class="range-help">Quando ativado, só esse trecho da lista entra na higienização, visualização e download.</div>
+    </div>
+
     <div class="btn-row">
       <button class="btn btn-primary" id="btnProcess" disabled onclick="doProcess()">
         ⚡ Processar lista
@@ -489,6 +594,26 @@
         <div class="fmt-pill" data-fmt="csv" onclick="setFmt(this)">📄 CSV</div>
       </div>
       <button class="btn btn-primary" onclick="doDownload()">Baixar agora</button>
+
+      <div class="split-box">
+        <div class="dl-title" style="font-size:15px; margin-bottom:12px;">🧩 Dividir lista em partes</div>
+        <div class="split-grid">
+          <div class="field-group">
+            <div class="field-label">Quantidade de partes</div>
+            <select class="fsel" id="splitPartsCount">
+              <option value="2">2 partes</option>
+              <option value="3">3 partes</option>
+              <option value="4">4 partes</option>
+              <option value="5">5 partes</option>
+              <option value="6">6 partes</option>
+              <option value="8">8 partes</option>
+              <option value="10">10 partes</option>
+            </select>
+          </div>
+          <div class="split-help" id="splitHelp">Escolha em quantas partes a lista final deve ser dividida para liberar os downloads individuais.</div>
+        </div>
+        <div class="split-actions" id="splitDownloads"></div>
+      </div>
     </div>
   </div>
 
@@ -530,6 +655,7 @@ let dupResolve = null;
 let misplacedResolve = null;
 let pendingMisplaced = [];
 let downloadFmt = 'xlsx';
+let lastProcessedTotal = 0;
 let previewMeta = null;
 let previewState = {
   active: 'before',
@@ -550,6 +676,13 @@ const previewDateToolsEl = document.getElementById('previewDateTools');
 const previewDateColEl = document.getElementById('previewDateCol');
 const previewDateFromEl = document.getElementById('previewDateFrom');
 const previewDateToEl = document.getElementById('previewDateTo');
+const useRowRangeEl = document.getElementById('useRowRange');
+const rowRangePanelEl = document.getElementById('rowRangePanel');
+const rowStartEl = document.getElementById('rowStart');
+const rowEndEl = document.getElementById('rowEnd');
+const splitPartsCountEl = document.getElementById('splitPartsCount');
+const splitDownloadsEl = document.getElementById('splitDownloads');
+const splitHelpEl = document.getElementById('splitHelp');
 const noticeStackEl = document.getElementById('noticeStack');
 
 function normalizeErrorPayload(error, fallbackTitle = 'Erro') {
@@ -570,6 +703,10 @@ function normalizeErrorPayload(error, fallbackTitle = 'Erro') {
 
 function clearNotices() {
   noticeStackEl.innerHTML = '';
+}
+
+function syncRowRangePanel() {
+  rowRangePanelEl.classList.toggle('hidden', !useRowRangeEl.checked);
 }
 
 function showNotice(error, fallbackTitle = 'Erro') {
@@ -629,6 +766,8 @@ previewDateToEl.addEventListener('change', () => {
   previewState[previewState.active].date_to = previewDateToEl.value;
   loadPreview(previewState.active);
 });
+splitPartsCountEl.addEventListener('change', renderSplitDownloads);
+useRowRangeEl.addEventListener('change', syncRowRangePanel);
 
 async function onFile() {
   const f = fileEl.files[0];
@@ -639,6 +778,12 @@ async function onFile() {
   uploadToken = null;
   previewMeta = null;
   pendingMisplaced = [];
+  useRowRangeEl.checked = false;
+  rowStartEl.value = '';
+  rowEndEl.value = '';
+  rowStartEl.min = '1';
+  rowEndEl.min = '1';
+  syncRowRangePanel();
 
   const badge = document.getElementById('fileBadge');
   badge.innerHTML = '<div class="file-badge"><span class="spin"></span> Lendo arquivo…</div>';
@@ -672,6 +817,11 @@ async function onFile() {
 
   badge.innerHTML =
     `<div class="file-badge">✓ ${f.name} — ${data.total_rows} linhas · ${data.columns.length} colunas</div>`;
+
+  rowStartEl.max = String(data.total_rows || 1);
+  rowEndEl.max = String(data.total_rows || 1);
+  rowStartEl.placeholder = `Ex.: 1`;
+  rowEndEl.placeholder = `Ex.: ${data.total_rows || 1}`;
 
   buildColumnConfig(data.columns, data.suggested_columns || {});
 
@@ -886,6 +1036,9 @@ function buildConfig(dupAction) {
     name_col:    document.getElementById('nameCol').value  || null,
     phone_col:   document.getElementById('phoneCol').value || null,
     split_names: document.getElementById('splitNames').checked,
+    use_row_range: useRowRangeEl.checked,
+    row_start: rowStartEl.value || null,
+    row_end: rowEndEl.value || null,
     dup_action:  dupAction,
     keep_cols:   [...selectedCols],
     phone_fixes: [...lastPhoneFixes],
@@ -1063,6 +1216,7 @@ function showResults(data) {
   const invalidPhoneEntries = metrics.invalid_phone_entries ?? data.warnings.length ?? 0;
   const finalRows = metrics.final_rows ?? data.total_after ?? 0;
   const totalRemoved = emptyRowsRemoved + rowsRemovedWithoutPhone + duplicatesRemoved;
+  lastProcessedTotal = finalRows;
 
   document.getElementById('statsBar').innerHTML = `
     <div class="stat"><div class="stat-val">${originalRows}</div><div class="stat-key">Linhas originais</div></div>
@@ -1099,7 +1253,8 @@ function showResults(data) {
     : '';
 
   resetPreviewState(data);
-  switchTab('before');
+  renderSplitDownloads();
+  switchTab(duplicatesFound > 0 ? 'after' : 'before');
   s3.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -1114,6 +1269,39 @@ function buildTable(id, cols, rows, emptyMsg = 'Nenhum registro para mostrar.') 
     `<table><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
 }
 
+function getSplitSizes(totalRows, totalParts) {
+  const total = Math.max(0, Number(totalRows) || 0);
+  const parts = total > 0
+    ? Math.min(Math.max(1, Number(totalParts) || 1), total)
+    : Math.max(1, Number(totalParts) || 1);
+  const base = Math.floor(total / parts);
+  const remainder = total % parts;
+  return Array.from({ length: parts }, (_, idx) => base + (idx < remainder ? 1 : 0));
+}
+
+function renderSplitDownloads() {
+  const requestedParts = Math.max(2, Number(splitPartsCountEl.value) || 2);
+  if (!lastProcessedTotal) {
+    splitDownloadsEl.innerHTML = '';
+    splitHelpEl.textContent = 'Processe uma lista primeiro para liberar os downloads divididos.';
+    return;
+  }
+
+  const sizes = getSplitSizes(lastProcessedTotal, requestedParts);
+  const totalParts = sizes.length;
+  splitHelpEl.textContent =
+    `A lista final com ${lastProcessedTotal} contato(s) será dividida da forma mais equilibrada possível em ${totalParts} parte(s).`;
+  splitDownloadsEl.innerHTML = sizes.map((size, idx) => `
+    <div class="split-download">
+      <div>
+        <strong>Parte ${idx + 1}</strong>
+        <span>${size} contato(s)</span>
+      </div>
+      <button class="btn btn-ghost" type="button" onclick="doDownloadPart(${idx + 1}, ${totalParts})">Baixar</button>
+    </div>
+  `).join('');
+}
+
 function switchTab(which) {
   previewState.active = which;
   document.getElementById('panelBefore').classList.toggle('hidden', which !== 'before');
@@ -1125,7 +1313,7 @@ function switchTab(which) {
 }
 
 // ── Download ──
-function submitNativeDownload() {
+function submitNativeDownload(partIndex = 1, totalParts = 1) {
   let iframe = document.getElementById('downloadFrame');
   if (!iframe) {
     iframe = document.createElement('iframe');
@@ -1145,6 +1333,8 @@ function submitNativeDownload() {
     upload_token: uploadToken,
     config: JSON.stringify(lastConfig),
     format: downloadFmt,
+    part_index: partIndex,
+    total_parts: totalParts,
   };
 
   Object.entries(fields).forEach(([name, value]) => {
@@ -1160,16 +1350,14 @@ function submitNativeDownload() {
   setTimeout(() => form.remove(), 1000);
 }
 
-async function doDownload() {
+async function downloadWithFetch(partIndex = 1, totalParts = 1) {
   clearNotices();
-  if (uploadToken) {
-    submitNativeDownload();
-    return;
-  }
   const fd = new FormData();
   fd.append('file', fileEl.files[0]);
   fd.append('config', JSON.stringify(lastConfig));
   fd.append('format', downloadFmt);
+  fd.append('part_index', String(partIndex));
+  fd.append('total_parts', String(totalParts));
   const res  = await fetch('/download', { method: 'POST', body: fd });
   if (!res.ok) {
     let errMsg = 'Erro ao baixar arquivo';
@@ -1200,6 +1388,22 @@ async function doDownload() {
   }, 1000);
 }
 
+async function doDownload() {
+  if (uploadToken) {
+    submitNativeDownload();
+    return;
+  }
+  await downloadWithFetch();
+}
+
+async function doDownloadPart(partIndex, totalParts) {
+  if (uploadToken) {
+    submitNativeDownload(partIndex, totalParts);
+    return;
+  }
+  await downloadWithFetch(partIndex, totalParts);
+}
+
 function setFmt(el) {
   document.querySelectorAll('.fmt-pill').forEach(p => p.classList.remove('on'));
   el.classList.add('on');
@@ -1212,6 +1416,10 @@ function activate(id, on) {
 function toggleSplit() {
   const cb = document.getElementById('splitNames');
   cb.checked = !cb.checked;
+}
+function toggleRowRange() {
+  useRowRangeEl.checked = !useRowRangeEl.checked;
+  syncRowRangePanel();
 }
 </script>
 </body>
