@@ -12,6 +12,7 @@ import numpy as np
 app = Flask(__name__)
 UPLOAD_CACHE_MAX = 8
 RESULT_CACHE_MAX = 16
+PREVIEW_LIMIT_MAX = 200
 UPLOAD_CACHE = OrderedDict()
 RESULT_CACHE = OrderedDict()
 
@@ -748,7 +749,7 @@ def build_preview_payload(df: pd.DataFrame, cols: list[str], config: dict, searc
     filtered_total = len(frame)
     frame = apply_preview_sort(frame, sort_mode)
 
-    limit = max(1, min(int(limit or 10), 200))
+    limit = max(1, min(int(limit or 10), PREVIEW_LIMIT_MAX))
     frame = frame.head(limit)
 
     return {
