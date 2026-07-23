@@ -10,7 +10,7 @@ import pandas as pd
 import numpy as np
 
 app = Flask(__name__)
-UPLOAD_CACHE_MAX = 8
+UPLOAD_CACHE_MAX = 16
 RESULT_CACHE_MAX = 16
 PREVIEW_LIMIT_MAX = 200
 UPLOAD_CACHE = OrderedDict()
@@ -20,7 +20,7 @@ RESULT_CACHE = OrderedDict()
 
 def extract_phones(raw: str):
     raw = str(raw).strip()
-    parts = re.split(r'[;|/\\\n]+|(?<!\d),(?!\d{3})', raw)
+    parts = re.split(r'[;|/\\\n]+|,(?!\d{3}(?!\d))', raw)
     cleaned_parts = [only_digits(p.strip()) for p in parts]
     return [digits for digits in cleaned_parts if digits]
 
@@ -131,6 +131,28 @@ def normalize_phone(digits: str):
             return None
 
     return f'55{ddd:02d}{number}'
+
+
+def describe_invalid_phone(raw: str) -> str:
+    """Human-readable explanation of why a phone entry failed normalization."""
+    digits = only_digits(raw)
+    if not digits:
+        return 'valor vazio após remover caracteres não numéricos'
+
+    trimmed = digits
+    while trimmed.startswith('55') and len(trimmed) > 11:
+        trimmed = trimmed[2:]
+
+    if len(trimmed) > 11:
+        return f'{len(digits)} dígitos ao todo — parece ser mais de um número colado (ex.: separador não reconhecido)'
+    if len(trimmed) < 8:
+        return f'apenas {len(digits)} dígito(s) — número incompleto'
+
+    ddd = trimmed[:2]
+    if not (11 <= int(ddd) <= 99):
+        return f'DDD "{ddd}" fora da faixa válida (11-99)'
+
+    return 'quantidade de dígitos não corresponde a um celular/fixo válido para o DDD'
 
 
 def looks_like_phone(val: str, reject_documents: bool = True) -> str | None:
@@ -361,6 +383,110 @@ def build_split_download_name(original_name: str, fmt: str, part_index: int, tot
     return f'{root}_higienizado_parte_{part_index:0{width}d}_de_{total_parts:0{width}d}.{ext}'
 
 
+def build_report_download_name(original_name: str) -> str:
+    base_name = os.path.basename(original_name or 'arquivo')
+    root, _ = os.path.splitext(base_name)
+    root = root or 'arquivo'
+    return f'{root}_relatorio.pdf'
+
+
+def build_report_pdf(metrics: dict, audit: dict) -> io.BytesIO:
+    """PDF mirroring the on-screen audit: a summary plus one table per category."""
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.units import mm
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+
+    styles = getSampleStyleSheet()
+    cell_style = ParagraphStyle('cell', parent=styles['Normal'], fontSize=8, leading=10)
+    header_style = ParagraphStyle('header', parent=styles['Normal'], fontSize=8, leading=10,
+                                  textColor=colors.white, fontName='Helvetica-Bold')
+
+    def para(value):
+        return Paragraph(str(value if value is not None else ''), cell_style)
+
+    def section_table(rows, headers, col_widths):
+        table_data = [[Paragraph(h, header_style) for h in headers]] + [[para(v) for v in row] for row in rows]
+        table = Table(table_data, colWidths=col_widths, repeatRows=1)
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0f6e50')),
+            ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor('#cccccc')),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f4f6f5')]),
+        ]))
+        return table
+
+    def add_section(story, title, rows, headers, col_widths):
+        story.append(Paragraph(title, styles['Heading2']))
+        if rows:
+            story.append(section_table(rows, headers, col_widths))
+        else:
+            story.append(Paragraph('Nenhum registro nesta categoria.', styles['Normal']))
+        story.append(Spacer(1, 16))
+
+    story = [Paragraph('Relatório de higienização de lista', styles['Title']), Spacer(1, 10)]
+
+    story.append(Paragraph('Resumo', styles['Heading2']))
+    summary_rows = [
+        ('Linhas originais', metrics.get('original_rows', 0)),
+        ('Linhas expandidas (telefone múltiplo)', metrics.get('extra_rows_from_phone_split', 0)),
+        ('Linhas vazias removidas', metrics.get('empty_rows_removed', 0)),
+        ('Linhas com mais de um telefone', metrics.get('rows_with_multiple_phones', 0)),
+        ('Entradas de telefone inválidas', metrics.get('invalid_phone_entries', 0)),
+        ('Linhas removidas por ficar sem telefone', metrics.get('rows_removed_without_phone', 0)),
+        ('Duplicatas encontradas', metrics.get('duplicates_found', 0)),
+        ('Duplicatas removidas', metrics.get('duplicates_removed', 0)),
+        ('Linhas finais', metrics.get('final_rows', 0)),
+    ]
+    story.append(section_table(summary_rows, ['Métrica', 'Valor'], [220, 80]))
+    story.append(Spacer(1, 16))
+
+    add_section(
+        story, 'Linhas vazias removidas',
+        [(r['line'],) for r in audit.get('empty_rows', [])],
+        ['Linha'], [80],
+    )
+    add_section(
+        story, 'Linhas com mais de um telefone',
+        [(r['line'], r.get('name', ''), r.get('before', ''), ', '.join(r.get('after', [])))
+         for r in audit.get('multi_phone', [])],
+        ['Linha', 'Nome', 'Valor original', 'Números separados'], [50, 140, 160, 160],
+    )
+    add_section(
+        story, 'Entradas de telefone inválidas',
+        [(r['line'], r.get('name', ''), r.get('before', ''), r.get('reason', ''))
+         for r in audit.get('invalid_phone', [])],
+        ['Linha', 'Nome', 'Valor original', 'Motivo'], [50, 140, 130, 190],
+    )
+    add_section(
+        story, 'Linhas removidas por ficar sem telefone',
+        [(r['line'], r.get('name', ''), r.get('before', ''), r.get('reason', ''))
+         for r in audit.get('no_phone', [])],
+        ['Linha', 'Nome', 'Valor antes', 'Motivo'], [50, 140, 130, 190],
+    )
+
+    dup_rows = sorted(
+        audit.get('duplicates', []),
+        key=lambda r: (r.get('phone', ''), 0 if r.get('status') == 'Original mantida' else 1),
+    )
+    add_section(
+        story, 'Duplicatas',
+        [(r['line'], r.get('name', ''), r.get('phone', ''), r.get('status', '')) for r in dup_rows],
+        ['Linha', 'Nome', 'Telefone', 'Status'], [50, 160, 130, 170],
+    )
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=landscape(A4),
+        leftMargin=16 * mm, rightMargin=16 * mm, topMargin=14 * mm, bottomMargin=14 * mm,
+        title='Relatório de higienização',
+    )
+    doc.build(story)
+    buf.seek(0)
+    return buf
+
+
 def split_dataframe_evenly(df: pd.DataFrame, total_parts: int) -> list[pd.DataFrame]:
     total_rows = len(df)
     total_parts = max(1, int(total_parts))
@@ -456,6 +582,14 @@ def classify_exception(exc: Exception, context: str = 'general') -> dict:
             details=message
         )
 
+    if context == 'merge':
+        return make_error_payload(
+            'Falha ao juntar as listas',
+            'Não foi possível combinar as listas selecionadas em um único arquivo.',
+            'Confira se todas as listas do lote ainda estão disponíveis e tente novamente.',
+            details=message
+        )
+
     if context == 'download':
         return make_error_payload(
             'Falha ao gerar o download',
@@ -529,6 +663,15 @@ def get_processed_result(cache_key: str | None) -> dict | None:
     return cached
 
 
+def invalidate_result_cache(upload_token: str | None) -> None:
+    """Drop cached processed results tied to an upload token (e.g. after editing source data)."""
+    if not upload_token:
+        return
+    prefix = f'{upload_token}:'
+    for key in [k for k in RESULT_CACHE if k.startswith(prefix)]:
+        RESULT_CACHE.pop(key, None)
+
+
 def load_dataframe_from_request(req) -> tuple[pd.DataFrame, str, str | None]:
     upload_token = req.form.get('upload_token')
     if upload_token:
@@ -558,9 +701,13 @@ def apply_row_range(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     return df.iloc[start_idx:end_idx].copy()
 
 
+def normalize_str_frame(df: pd.DataFrame) -> pd.DataFrame:
+    normalized = df.fillna('').astype(str).replace({'nan': '', 'None': '', '<NA>': ''})
+    return normalized.apply(lambda col: col.str.strip())
+
+
 def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    cleaned = df.fillna('').astype(str).replace({'nan': '', 'None': '', '<NA>': ''})
-    cleaned = cleaned.apply(lambda col: col.str.strip())
+    cleaned = normalize_str_frame(df)
     return cleaned.loc[cleaned.ne('').any(axis=1)].reset_index(drop=True)
 
 
@@ -732,7 +879,8 @@ def apply_preview_sort(frame: pd.DataFrame, sort_mode: str) -> pd.DataFrame:
 def build_preview_payload(df: pd.DataFrame, cols: list[str], config: dict, search: str = '', limit: int = 10,
                           phone_filter: str = 'all', sort_mode: str = '',
                           date_col: str | None = None, date_from: str = '', date_to: str = '',
-                          duplicate_review: dict | None = None) -> dict:
+                          duplicate_review: dict | None = None, include_row_index: bool = False,
+                          offset: int = 0) -> dict:
     frame = df.copy()
     frame = frame.astype(str).replace({'nan': '', 'None': '', '<NA>': ''})
     total_rows = len(frame)
@@ -750,11 +898,17 @@ def build_preview_payload(df: pd.DataFrame, cols: list[str], config: dict, searc
     frame = apply_preview_sort(frame, sort_mode)
 
     limit = max(1, min(int(limit or 10), PREVIEW_LIMIT_MAX))
-    frame = frame.head(limit)
+    offset = max(0, int(offset or 0))
+    frame = frame.iloc[offset:offset + limit]
+
+    rows = frame[cols].to_dict(orient='records')
+    if include_row_index:
+        for row, idx in zip(rows, frame.index):
+            row['__idx'] = int(idx)
 
     return {
         'columns': cols,
-        'rows': frame[cols].to_dict(orient='records'),
+        'rows': rows,
         'shown_count': len(frame),
         'filtered_total': filtered_total,
         'total_rows': total_rows,
@@ -913,6 +1067,59 @@ def detect_misplaced_phones(df: pd.DataFrame, phone_col: str, keep_cols: list) -
 
 # ─── Core processing (vectorized) ─────────────────────────────────────────────
 
+def dedupe_by_phone(df: pd.DataFrame, phone_col: str | None, name_col: str | None, dup_action: str) -> dict:
+    """Detect (and optionally remove) rows that share the same phone value in `phone_col`.
+
+    Rows with a blank dedupe key never count as duplicates of one another —
+    only used as a standalone step; process_dataframe's own no-phone rows
+    are already filtered out before this runs there.
+    """
+    if phone_col and phone_col in df.columns:
+        dedupe_basis = df[phone_col].fillna('').astype(str).str.strip()
+    else:
+        dedupe_basis = pd.Series('', index=df.index, dtype=str)
+
+    duplicate_review_df = pd.DataFrame()
+    duplicates_audit = []
+    duplicate_group_mask = dedupe_basis.duplicated(keep=False) & dedupe_basis.ne('')
+    duplicate_row_mask = dedupe_basis.duplicated(keep='first') & dedupe_basis.ne('')
+    duplicate_group = df.loc[duplicate_group_mask].copy()
+    if not duplicate_group.empty:
+        duplicate_group.insert(
+            0,
+            'STATUS_DUPLICATA',
+            np.where(
+                duplicate_row_mask.loc[duplicate_group.index],
+                'Duplicada removida' if dup_action == 'remove' else 'Duplicada mantida',
+                'Original mantida'
+            )
+        )
+        duplicate_review_df = duplicate_group
+        for idx, row in duplicate_group.iterrows():
+            duplicates_audit.append({
+                'line': int(idx) + 2,
+                'name': (row[name_col] if name_col and name_col in duplicate_group.columns else ''),
+                'phone': (row[phone_col] if phone_col and phone_col in duplicate_group.columns else ''),
+                'status': row['STATUS_DUPLICATA'],
+            })
+
+    dup_count = int(duplicate_row_mask.sum())
+    result = df
+    duplicates_removed = 0
+    if dup_action == 'remove':
+        before = len(result)
+        result = result.loc[~duplicate_row_mask]
+        duplicates_removed = max(before - len(result), 0)
+
+    return {
+        'df': result,
+        'dup_count': dup_count,
+        'duplicates_removed': duplicates_removed,
+        'duplicate_review_df': duplicate_review_df,
+        'duplicates_audit': duplicates_audit,
+    }
+
+
 def process_dataframe(df: pd.DataFrame, config: dict) -> dict:
     name_col      = config.get('name_col')
     phone_col     = config.get('phone_col')
@@ -930,6 +1137,13 @@ def process_dataframe(df: pd.DataFrame, config: dict) -> dict:
     }
 
     warnings = []
+    audit = {
+        'empty_rows': [],
+        'multi_phone': [],
+        'invalid_phone': [],
+        'no_phone': [],
+        'duplicates': [],
+    }
     original_total = len(df)
     metrics = {
         'original_rows': original_total,
@@ -943,8 +1157,15 @@ def process_dataframe(df: pd.DataFrame, config: dict) -> dict:
         'final_rows': 0,
     }
 
+    blank_mask = normalize_str_frame(df).eq('').all(axis=1)
+    for idx in df.index[blank_mask]:
+        audit['empty_rows'].append({'line': int(idx) + 2})
+
     df = clean_dataframe(df)
     metrics['empty_rows_removed'] = max(original_total - len(df), 0)
+
+    bad_mask = None
+    phone_raw_series = None
 
     # Apply accepted phone fixes before processing
     if phone_col and phone_fixes:
@@ -975,6 +1196,13 @@ def process_dataframe(df: pd.DataFrame, config: dict) -> dict:
             ]
         phone_counts = df['_phones'].apply(len)
         metrics['rows_with_multiple_phones'] = int((phone_counts > 1).sum())
+        for idx in df.index[phone_counts > 1]:
+            audit['multi_phone'].append({
+                'line': int(idx) + 2,
+                'name': (df.at[idx, name_col] if name_col and name_col in df.columns else ''),
+                'before': df.at[idx, phone_col],
+                'after': list(df.at[idx, '_phones']),
+            })
         explode_cols = ['_phones']
         if '_paired_names' in df.columns:
             explode_cols.append('_paired_names')
@@ -994,8 +1222,16 @@ def process_dataframe(df: pd.DataFrame, config: dict) -> dict:
 
         bad_mask = normalized.isna() & df['_phones'].str.strip().ne('')
         metrics['invalid_phone_entries'] = int(bad_mask.sum())
+        phone_raw_series = df['_phones'].copy()
         for idx in df[bad_mask].index:
-            warnings.append(f'Linha {idx+2}: telefone inválido "{df["_phones"][idx]}"')
+            raw_val = df['_phones'][idx]
+            warnings.append(f'Linha {idx+2}: telefone inválido "{raw_val}"')
+            audit['invalid_phone'].append({
+                'line': int(idx) + 2,
+                'name': (df.at[idx, name_col] if name_col and name_col in df.columns else ''),
+                'before': raw_val,
+                'reason': describe_invalid_phone(raw_val),
+            })
 
         # Keep only normalized phones in the final file.
         df[phone_col] = normalized.fillna('')
@@ -1048,37 +1284,29 @@ def process_dataframe(df: pd.DataFrame, config: dict) -> dict:
     # ── Remove rows without phone ──
     if phone_col and phone_col in result.columns:
         rows_before_phone_filter = len(result)
-        result = result[result[phone_col].astype(str).str.strip().ne('')]
-        dedupe_basis = result[phone_col].fillna('').astype(str).str.strip()
+        no_phone_mask = result[phone_col].astype(str).str.strip().eq('')
+        for idx in result.index[no_phone_mask]:
+            was_invalid = bool(bad_mask is not None and idx in bad_mask.index and bad_mask.loc[idx])
+            raw_val = phone_raw_series.loc[idx] if phone_raw_series is not None and idx in phone_raw_series.index else ''
+            reason = describe_invalid_phone(raw_val) if was_invalid else 'nenhum telefone informado nessa linha'
+            audit['no_phone'].append({
+                'line': int(idx) + 2,
+                'name': (result.at[idx, name_col] if name_col and name_col in result.columns else ''),
+                'before': raw_val,
+                'reason': reason,
+            })
+        result = result[~no_phone_mask]
         metrics['rows_removed_without_phone'] = max(rows_before_phone_filter - len(result), 0)
-    else:
-        dedupe_basis = pd.Series('', index=result.index, dtype=str)
 
     # ── Duplicates ──
-    duplicate_review_df = pd.DataFrame()
-    duplicate_group_mask = dedupe_basis.duplicated(keep=False)
-    duplicate_row_mask = dedupe_basis.duplicated(keep='first')
-    duplicate_group = result.loc[duplicate_group_mask].copy()
-    if not duplicate_group.empty:
-        duplicate_group.insert(
-            0,
-            'STATUS_DUPLICATA',
-            np.where(
-                duplicate_row_mask.loc[duplicate_group.index],
-                'Duplicada removida' if dup_action == 'remove' else 'Duplicada mantida',
-                'Original mantida'
-            )
-        )
-        duplicate_review_df = duplicate_group
+    dedupe_result = dedupe_by_phone(result, phone_col, name_col, dup_action)
+    result = dedupe_result['df']
+    dup_count = dedupe_result['dup_count']
+    duplicate_review_df = dedupe_result['duplicate_review_df']
+    audit['duplicates'] = dedupe_result['duplicates_audit']
 
-    dup_count = int(duplicate_row_mask.sum())
     metrics['duplicates_found'] = dup_count
-    if dup_action == 'remove':
-        before_drop_duplicates = len(result)
-        keep_mask = ~duplicate_row_mask
-        result = result.loc[keep_mask]
-        dedupe_basis = dedupe_basis.loc[keep_mask]
-        metrics['duplicates_removed'] = max(before_drop_duplicates - len(result), 0)
+    metrics['duplicates_removed'] = dedupe_result['duplicates_removed']
     metrics['final_rows'] = len(result)
 
     return {
@@ -1086,6 +1314,7 @@ def process_dataframe(df: pd.DataFrame, config: dict) -> dict:
         'dup_count': dup_count,
         'warnings':  warnings,
         'metrics':   metrics,
+        'audit':     audit,
         'duplicate_review_df': duplicate_review_df,
     }
 
@@ -1136,6 +1365,121 @@ def upload():
         return jsonify_error(e, status_code, 'upload')
 
 
+MERGED_FILENAME = 'lista-combinada'
+
+
+@app.route('/merge_lists', methods=['POST'])
+def merge_lists():
+    try:
+        entries = json.loads(request.form.get('entries', '[]'))
+        if not isinstance(entries, list) or len(entries) < 2:
+            raise ValueError('Selecione ao menos duas listas para juntar')
+
+        add_origin_column = request.form.get('add_origin_column', '1') == '1'
+        origin_column_name = (request.form.get('origin_column_name') or 'lista_origem').strip() or 'lista_origem'
+        dup_action = request.form.get('dup_action', 'keep')
+
+        frames = []
+        summaries = []
+        first_config = {}
+        for i, entry in enumerate(entries):
+            token = entry.get('upload_token')
+            filename = entry.get('filename') or 'lista'
+            config = entry.get('config') or {}
+            if i == 0:
+                first_config = config
+            cached = get_uploaded_dataframe(token) if token else None
+            if not cached:
+                raise ValueError(f'A lista "{filename}" expirou ou não foi encontrada. Reenvie e reprocesse antes de juntar.')
+
+            # Cada lista já foi higienizada individualmente nesse ponto (o resultado
+            # vem do cache) — o merge só concatena, não reprocessa os dados de novo.
+            result = get_or_process_result(cached['df'], cached['filename'], token, config)
+            part_df = result['df'].copy()
+            if add_origin_column:
+                part_df.insert(0, origin_column_name, filename)
+            frames.append(part_df)
+            summaries.append({
+                'filename': filename,
+                'metrics': result.get('metrics', {}),
+                'total_rows': len(part_df),
+            })
+
+        merged = pd.concat(frames, ignore_index=True, sort=False).fillna('')
+        if len(merged.columns) == 0:
+            raise ValueError('As listas selecionadas não têm colunas para combinar')
+
+        # Reaproveita o mapeamento de telefone/nome já escolhido na primeira lista
+        # do lote, em vez de tentar inferir de novo sobre o combinado — inferência
+        # automática sobre colunas já processadas (ex.: a coluna de origem) pode
+        # acertar a coluna errada.
+        merge_phone_col = first_config.get('phone_col')
+        if merge_phone_col not in merged.columns:
+            merge_phone_col = None
+        merge_name_col = first_config.get('name_col')
+        if merge_name_col not in merged.columns:
+            merge_name_col = None
+
+        dedupe_result = dedupe_by_phone(merged, merge_phone_col, merge_name_col, dup_action)
+        result_df = dedupe_result['df']
+
+        metrics = {
+            'original_rows': len(merged),
+            'empty_rows_removed': 0,
+            'rows_with_multiple_phones': 0,
+            'extra_rows_from_phone_split': 0,
+            'invalid_phone_entries': 0,
+            'rows_removed_without_phone': 0,
+            'duplicates_found': dedupe_result['dup_count'],
+            'duplicates_removed': dedupe_result['duplicates_removed'],
+            'final_rows': len(result_df),
+        }
+        audit = {
+            'empty_rows': [], 'multi_phone': [], 'invalid_phone': [], 'no_phone': [],
+            'duplicates': dedupe_result['duplicates_audit'],
+        }
+
+        upload_token = store_uploaded_dataframe(MERGED_FILENAME, merged)
+        merge_config = {
+            'name_col':    merge_name_col,
+            'phone_col':   merge_phone_col,
+            'split_names': False,
+            'dup_action':  'keep',
+            'keep_cols':   list(merged.columns),
+        }
+        # Pré-preenche o cache do resultado processado com o que já calculamos
+        # acima, para que /preview, /download e /export_report não refaçam esse
+        # trabalho (a lista combinada já sai pronta, sem precisar "higienizar de novo").
+        result_cache_key = build_result_cache_key(upload_token, MERGED_FILENAME, merge_config)
+        store_processed_result(result_cache_key, {
+            'df': result_df,
+            'dup_count': dedupe_result['dup_count'],
+            'warnings': [],
+            'metrics': metrics,
+            'audit': audit,
+            'duplicate_review_df': dedupe_result['duplicate_review_df'],
+        })
+
+        return jsonify({
+            'columns_before': list(merged.columns),
+            'columns_after':  list(result_df.columns),
+            'preview_before': merged.head(10).to_dict(orient='records'),
+            'preview_after':  result_df.head(10).to_dict(orient='records'),
+            'total_before':   len(merged),
+            'total_after':    len(result_df),
+            'dup_count':      dedupe_result['dup_count'],
+            'warnings':       [],
+            'metrics':        metrics,
+            'audit':          audit,
+            'upload_token':   upload_token,
+            'config':         merge_config,
+            'per_list_summary': summaries,
+        })
+    except Exception as e:
+        status_code = 400 if isinstance(e, (ValueError, pd.errors.EmptyDataError)) else 500
+        return jsonify_error(e, status_code, 'merge')
+
+
 @app.route('/process_stream', methods=['POST'])
 def process_stream():
     config   = json.loads(request.form.get('config', '{}'))
@@ -1182,6 +1526,7 @@ def process_stream():
                 'dup_count':      result['dup_count'],
                 'warnings':       result['warnings'],
                 'metrics':        result.get('metrics', {}),
+                'audit':          result.get('audit', {}),
                 'misplaced':      misplaced,
             }
             yield from emit(100, 'Concluído!', payload)
@@ -1234,6 +1579,222 @@ def download():
         return jsonify_error(e, status_code, 'download')
 
 
+@app.route('/export_report', methods=['POST'])
+def export_report():
+    config = json.loads(request.form.get('config', '{}'))
+    try:
+        df, filename, upload_token = load_dataframe_from_request(request)
+    except ValueError as e:
+        return jsonify_error(e, 400, 'download')
+    try:
+        result = get_or_process_result(df, filename, upload_token, config)
+        buf = build_report_pdf(result.get('metrics', {}), result.get('audit', {}))
+        download_name = build_report_download_name(filename)
+        return send_file(buf, mimetype='application/pdf',
+                         as_attachment=True, download_name=download_name)
+    except Exception as e:
+        status_code = 400 if isinstance(e, (ValueError, pd.errors.EmptyDataError)) else 500
+        return jsonify_error(e, status_code, 'download')
+
+
+@app.route('/edit_cell', methods=['POST'])
+def edit_cell():
+    upload_token = request.form.get('upload_token', '')
+    column = request.form.get('column', '')
+    value = request.form.get('value', '')
+    try:
+        row_index = int(request.form.get('row_index', ''))
+    except (TypeError, ValueError):
+        return jsonify_error(ValueError('Linha inválida'), 400, 'process')
+
+    cached = get_uploaded_dataframe(upload_token)
+    if not cached:
+        return jsonify_error(ValueError('Upload não encontrado. Reenvie o arquivo.'), 400, 'process')
+
+    df = cached['df']
+    if column not in df.columns or row_index not in df.index:
+        return jsonify_error(ValueError('Célula inválida'), 400, 'process')
+
+    df.at[row_index, column] = value
+    invalidate_result_cache(upload_token)
+    return jsonify({'ok': True})
+
+
+@app.route('/rename_column', methods=['POST'])
+def rename_column():
+    upload_token = request.form.get('upload_token', '')
+    old_name = request.form.get('old_name', '')
+    new_name = str(request.form.get('new_name', '')).strip()
+
+    cached = get_uploaded_dataframe(upload_token)
+    if not cached:
+        return jsonify_error(ValueError('Upload não encontrado. Reenvie o arquivo.'), 400, 'process')
+
+    df = cached['df']
+    if old_name not in df.columns:
+        return jsonify_error(ValueError('Coluna inválida'), 400, 'process')
+    if not new_name:
+        return jsonify_error(ValueError('Informe um nome de coluna'), 400, 'process')
+    if new_name != old_name and new_name in df.columns:
+        return jsonify_error(ValueError('Já existe uma coluna com esse nome'), 400, 'process')
+
+    df.rename(columns={old_name: new_name}, inplace=True)
+    invalidate_result_cache(upload_token)
+    return jsonify({'ok': True, 'columns': list(df.columns)})
+
+
+@app.route('/add_row', methods=['POST'])
+def add_row():
+    upload_token = request.form.get('upload_token', '')
+    cached = get_uploaded_dataframe(upload_token)
+    if not cached:
+        return jsonify_error(ValueError('Upload não encontrado. Reenvie o arquivo.'), 400, 'process')
+
+    df = cached['df']
+    if df.columns.empty:
+        return jsonify_error(ValueError('A planilha não tem colunas para adicionar uma linha.'), 400, 'process')
+
+    new_index = int(df.index.max()) + 1 if len(df) else 0
+    df.loc[new_index] = ''
+    invalidate_result_cache(upload_token)
+    return jsonify({'ok': True, 'row_index': new_index, 'total_rows': len(df)})
+
+
+@app.route('/add_column', methods=['POST'])
+def add_column():
+    upload_token = request.form.get('upload_token', '')
+    cached = get_uploaded_dataframe(upload_token)
+    if not cached:
+        return jsonify_error(ValueError('Upload não encontrado. Reenvie o arquivo.'), 400, 'process')
+
+    df = cached['df']
+    base_name = 'nova_coluna'
+    name = base_name
+    counter = 1
+    while name in df.columns:
+        counter += 1
+        name = f'{base_name}_{counter}'
+
+    df[name] = ''
+    invalidate_result_cache(upload_token)
+    return jsonify({'ok': True, 'column': name, 'columns': list(df.columns)})
+
+
+@app.route('/delete_row', methods=['POST'])
+def delete_row():
+    upload_token = request.form.get('upload_token', '')
+    try:
+        row_index = int(request.form.get('row_index', ''))
+    except (TypeError, ValueError):
+        return jsonify_error(ValueError('Linha inválida'), 400, 'process')
+
+    cached = get_uploaded_dataframe(upload_token)
+    if not cached:
+        return jsonify_error(ValueError('Upload não encontrado. Reenvie o arquivo.'), 400, 'process')
+
+    df = cached['df']
+    if row_index not in df.index:
+        return jsonify_error(ValueError('Linha inválida'), 400, 'process')
+    if len(df) <= 1:
+        return jsonify_error(ValueError('A planilha precisa ter ao menos uma linha.'), 400, 'process')
+
+    cached['undo_df'] = df.copy()
+    cached['df'] = df.drop(index=row_index)
+    invalidate_result_cache(upload_token)
+    return jsonify({'ok': True, 'total_rows': len(cached['df'])})
+
+
+@app.route('/delete_column', methods=['POST'])
+def delete_column():
+    upload_token = request.form.get('upload_token', '')
+    column = request.form.get('column', '')
+
+    cached = get_uploaded_dataframe(upload_token)
+    if not cached:
+        return jsonify_error(ValueError('Upload não encontrado. Reenvie o arquivo.'), 400, 'process')
+
+    df = cached['df']
+    if column not in df.columns:
+        return jsonify_error(ValueError('Coluna inválida'), 400, 'process')
+    if len(df.columns) <= 1:
+        return jsonify_error(ValueError('A planilha precisa ter ao menos uma coluna.'), 400, 'process')
+
+    cached['undo_df'] = df.copy()
+    cached['df'] = df.drop(columns=[column])
+    invalidate_result_cache(upload_token)
+    return jsonify({'ok': True, 'columns': list(cached['df'].columns)})
+
+
+@app.route('/delete_rows', methods=['POST'])
+def delete_rows():
+    upload_token = request.form.get('upload_token', '')
+    try:
+        row_indices = [int(i) for i in json.loads(request.form.get('row_indices', '[]'))]
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return jsonify_error(ValueError('Linhas inválidas'), 400, 'process')
+    if not row_indices:
+        return jsonify_error(ValueError('Nenhuma linha selecionada'), 400, 'process')
+
+    cached = get_uploaded_dataframe(upload_token)
+    if not cached:
+        return jsonify_error(ValueError('Upload não encontrado. Reenvie o arquivo.'), 400, 'process')
+
+    df = cached['df']
+    valid_indices = [i for i in row_indices if i in df.index]
+    if not valid_indices:
+        return jsonify_error(ValueError('Linhas inválidas'), 400, 'process')
+    if len(df) - len(valid_indices) < 1:
+        return jsonify_error(ValueError('A planilha precisa ter ao menos uma linha.'), 400, 'process')
+
+    cached['undo_df'] = df.copy()
+    cached['df'] = df.drop(index=valid_indices)
+    invalidate_result_cache(upload_token)
+    return jsonify({'ok': True, 'total_rows': len(cached['df'])})
+
+
+@app.route('/delete_columns', methods=['POST'])
+def delete_columns():
+    upload_token = request.form.get('upload_token', '')
+    try:
+        columns = json.loads(request.form.get('columns', '[]'))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return jsonify_error(ValueError('Colunas inválidas'), 400, 'process')
+    if not columns:
+        return jsonify_error(ValueError('Nenhuma coluna selecionada'), 400, 'process')
+
+    cached = get_uploaded_dataframe(upload_token)
+    if not cached:
+        return jsonify_error(ValueError('Upload não encontrado. Reenvie o arquivo.'), 400, 'process')
+
+    df = cached['df']
+    valid_columns = [c for c in columns if c in df.columns]
+    if not valid_columns:
+        return jsonify_error(ValueError('Colunas inválidas'), 400, 'process')
+    if len(df.columns) - len(valid_columns) < 1:
+        return jsonify_error(ValueError('A planilha precisa ter ao menos uma coluna.'), 400, 'process')
+
+    cached['undo_df'] = df.copy()
+    cached['df'] = df.drop(columns=valid_columns)
+    invalidate_result_cache(upload_token)
+    return jsonify({'ok': True, 'columns': list(cached['df'].columns)})
+
+
+@app.route('/undo_delete', methods=['POST'])
+def undo_delete():
+    upload_token = request.form.get('upload_token', '')
+    cached = get_uploaded_dataframe(upload_token)
+    if not cached:
+        return jsonify_error(ValueError('Upload não encontrado. Reenvie o arquivo.'), 400, 'process')
+
+    undo_df = cached.pop('undo_df', None)
+    if undo_df is None:
+        return jsonify_error(ValueError('Não há exclusão para desfazer.'), 400, 'process')
+
+    cached['df'] = undo_df
+    invalidate_result_cache(upload_token)
+    return jsonify({'ok': True, 'total_rows': len(cached['df']), 'columns': list(cached['df'].columns)})
+
+
 @app.route('/preview', methods=['POST'])
 def preview():
     config = json.loads(request.form.get('config', '{}'))
@@ -1245,6 +1806,7 @@ def preview():
     date_from = request.form.get('date_from', '')
     date_to = request.form.get('date_to', '')
     limit = request.form.get('limit', '10')
+    offset = request.form.get('offset', '0')
 
     try:
         df, filename, upload_token = load_dataframe_from_request(request)
@@ -1270,6 +1832,7 @@ def preview():
             duplicate_review = {'available': False, 'enabled': False, 'removed': False, 'count': 0}
 
         cols = list(preview_df.columns)
+        editable = stage != 'after' and bool(upload_token)
         payload = build_preview_payload(
             preview_df,
             cols=cols,
@@ -1282,7 +1845,11 @@ def preview():
             date_from=date_from,
             date_to=date_to,
             duplicate_review=duplicate_review,
+            include_row_index=editable,
+            offset=offset,
         )
+        payload['editable'] = editable
+        payload['upload_token'] = upload_token
         return jsonify(payload)
     except Exception as e:
         status_code = 400 if isinstance(e, (ValueError, pd.errors.EmptyDataError)) else 500

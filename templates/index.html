@@ -59,6 +59,30 @@
   }
   .card.highlighted { border-color: var(--accent); }
   .card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+  .header-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .btn-compact { padding: 8px 14px; font-size: 13px; }
+
+  .info-tip {
+    display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--muted); font-size: 10px; font-weight: 700; font-style: normal; font-family: var(--sans);
+    cursor: help; position: relative;
+  }
+  .info-tip:hover { border-color: var(--accent); color: var(--accent); }
+  .info-tip::after {
+    content: attr(data-tip);
+    position: absolute; bottom: 130%; left: 50%; transform: translateX(-50%);
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); font-size: 12px; font-weight: 400; line-height: 1.5; font-family: var(--sans);
+    padding: 10px 12px; border-radius: 8px; text-align: left;
+    width: max-content; max-width: 260px;
+    box-shadow: 0 12px 30px rgba(0,0,0,.4);
+    opacity: 0; visibility: hidden; pointer-events: none;
+    transition: opacity .15s;
+    z-index: 60;
+  }
+  .info-tip:hover::after { opacity: 1; visibility: visible; }
   .step-badge {
     width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
@@ -87,6 +111,22 @@
     color: var(--accent); border-radius: 8px; padding: 8px 14px;
     font-size: 13px; font-family: var(--mono); margin-top: 14px;
   }
+
+  .batch-chip {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 14px; margin-bottom: 8px;
+  }
+  .batch-chip-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .batch-chip-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .batch-chip-meta { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+  .batch-chip-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .merge-recap {
+    background: var(--accent-dim); border: 1px solid var(--accent); border-radius: 8px;
+    padding: 12px 14px; margin-bottom: 20px; font-size: 13px; color: var(--text);
+  }
+  .merge-recap-title { font-weight: 700; color: var(--accent); margin-bottom: 6px; }
+  .merge-recap-item { padding: 2px 0; font-family: var(--mono); font-size: 12px; }
 
   .divider { height: 1px; background: var(--border); margin: 22px 0; }
   .field-label {
@@ -120,14 +160,21 @@
   .chip.on { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
   .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
 
+  .toggle-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+    margin-bottom: 20px;
+  }
+  @media (max-width: 700px) { .toggle-grid { grid-template-columns: 1fr; } }
   .toggle-row {
-    display: inline-flex; align-items: center; gap: 12px;
-    padding: 12px 16px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    width: 100%;
+    padding: 18px 20px; border-radius: 10px;
     background: var(--surface2); border: 1px solid var(--border);
     cursor: pointer; transition: border-color .15s;
   }
   .toggle-row:hover { border-color: var(--accent); }
-  .toggle-row label { font-size: 14px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+  .toggle-label-group { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .toggle-row label { font-size: 14px; font-weight: 500; cursor: pointer; }
   .toggle-row label span { color: var(--accent); font-family: var(--mono); font-size: 13px; }
   .range-panel {
     margin-top: 12px;
@@ -191,6 +238,7 @@
   .btn-danger { background: var(--danger); color: #fff; }
   .btn-danger:hover { filter: brightness(1.1); }
   .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
+  .btn-block { width: 100%; justify-content: center; }
 
   .spin {
     width: 16px; height: 16px; border-radius: 50%;
@@ -198,25 +246,6 @@
     animation: rot .6s linear infinite; flex-shrink: 0;
   }
   @keyframes rot { to { transform: rotate(360deg); } }
-
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 22px; }
-  @media (max-width: 600px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  @media (max-width: 420px) { .stats { grid-template-columns: 1fr; } }
-  .stat {
-    background: var(--surface2); border: 1px solid var(--border);
-    border-radius: 10px; padding: 14px 16px;
-  }
-  .stat-val { font-size: 26px; font-weight: 700; font-family: var(--mono); color: var(--accent); line-height: 1; }
-  .stat-key { font-size: 12px; color: var(--muted); margin-top: 4px; }
-
-  .warn-box {
-    background: rgba(255,169,64,.07); border: 1px solid rgba(255,169,64,.25);
-    border-radius: 10px; padding: 14px 18px; margin-bottom: 20px;
-    max-height: 180px; overflow: hidden; display: flex; flex-direction: column;
-  }
-  .warn-box-title { font-size: 13px; font-weight: 600; color: var(--warn); margin-bottom: 8px; flex-shrink: 0; }
-  .warn-box ul { padding-left: 18px; overflow-y: auto; flex: 1; }
-  .warn-box li { font-size: 12px; font-family: var(--mono); color: var(--warn); line-height: 1.7; }
 
   .summary-box {
     background: rgba(0,229,160,.06);
@@ -230,16 +259,22 @@
     font-weight: 600;
     color: var(--accent);
     margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
-  .summary-formula {
-    font-size: 14px;
-    color: var(--text);
-    margin-bottom: 10px;
+  .summary-hero {
+    display: flex;
+    justify-content: space-around;
+    flex-wrap: wrap;
+    text-align: center;
+    gap: 12px 20px;
+    margin-bottom: 16px;
   }
-  .summary-formula strong {
-    color: var(--accent);
-    font-family: var(--mono);
-  }
+  .summary-hero-item { min-width: 90px; }
+  .summary-hero-val { font-size: 26px; font-weight: 700; font-family: var(--mono); color: var(--accent); line-height: 1; }
+  .summary-hero-key { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .summary-divider { height: 1px; background: rgba(0,229,160,.2); margin-bottom: 16px; }
   .summary-list {
     display: grid;
     grid-template-columns: repeat(2, minmax(220px, 1fr));
@@ -252,6 +287,21 @@
   }
   .summary-item strong {
     color: var(--text);
+  }
+  .summary-item.auditable {
+    cursor: pointer;
+    padding: 4px 6px; margin: -4px -6px;
+    border-radius: 6px;
+    transition: background .15s, color .15s;
+  }
+  .summary-item.auditable:hover {
+    background: rgba(0,229,160,.1);
+    color: var(--text);
+  }
+  .summary-item.auditable::after {
+    content: '→';
+    margin-left: 6px;
+    opacity: .5;
   }
   @media (max-width: 700px) {
     .summary-list { grid-template-columns: 1fr; }
@@ -292,7 +342,44 @@
     .preview-tools-extra { grid-template-columns: 1fr; }
   }
 
+  .editor-toolbar { display: flex; gap: 12px; align-items: center; }
+  .editor-toolbar .preview-search { flex: 1; }
+  .editor-toolbar .fsel { width: 160px; flex-shrink: 0; }
+  .editor-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .editor-bulk-bar { display: flex; gap: 8px; margin-top: 12px; }
+  .editor-undo-bar {
+    display: flex; align-items: center; gap: 12px; margin-top: 12px;
+    background: rgba(124,106,247,.1); border: 1px solid rgba(124,106,247,.35);
+    border-radius: 10px; padding: 10px 14px; font-size: 13px; color: var(--text);
+  }
+  .editor-pager { display: flex; align-items: center; justify-content: center; gap: 16px; }
+  .row-select-cb, .col-select-cb { cursor: pointer; accent-color: var(--accent); }
+
+  .dirty-banner {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    background: rgba(124,106,247,.1); border: 1px solid rgba(124,106,247,.35);
+    border-radius: 10px; padding: 12px 16px; margin-bottom: 16px;
+    font-size: 13px; color: var(--text);
+  }
   .table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid var(--border); }
+  td[contenteditable="true"] { cursor: text; transition: background .2s; }
+  td[contenteditable="true"]:hover { background: rgba(0,229,160,.05); }
+  td[contenteditable="true"]:focus { outline: 1.5px solid var(--accent); outline-offset: -1.5px; background: rgba(0,229,160,.08); }
+  td.cell-saved { background: rgba(0,229,160,.18) !important; }
+  .th-inner { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .th-label { cursor: text; flex: 1; }
+  .th-label:hover { color: var(--text); text-decoration: underline dotted; }
+  .th-rename-input {
+    width: 100%; background: var(--surface); border: 1px solid var(--accent);
+    border-radius: 4px; color: var(--text); font: inherit; padding: 2px 6px;
+  }
+  .th-icon-btn, .row-delete-btn {
+    background: transparent; border: none; color: var(--muted);
+    cursor: pointer; font-size: 12px; line-height: 1; padding: 2px 4px;
+    border-radius: 4px; flex-shrink: 0; transition: color .15s, background .15s;
+  }
+  .th-icon-btn:hover, .row-delete-btn:hover { color: var(--danger); background: rgba(255,77,109,.12); }
+  .th-actions, .td-actions { width: 1%; white-space: nowrap; text-align: center; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; font-family: var(--mono); }
   thead th {
     background: var(--surface2); color: var(--accent);
@@ -317,6 +404,12 @@
   }
   .dl-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
   .fmt-row { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+  .dl-actions { display: flex; flex-direction: column; gap: 10px; }
+  .split-box-title {
+    font-size: 12px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .6px;
+    display: flex; align-items: center; gap: 6px; margin-bottom: 14px;
+  }
   .fmt-pill {
     padding: 7px 16px; border-radius: 20px;
     border: 1.5px solid var(--border); background: var(--surface2);
@@ -408,6 +501,41 @@
   .modal p { color: var(--muted); font-size: 14px; line-height: 1.65; margin-bottom: 24px; }
   .modal-btns { display: flex; gap: 10px; }
 
+  .dup-groups { display: flex; flex-direction: column; gap: 8px; }
+  .dup-group {
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface2); overflow: hidden;
+  }
+  .dup-group-head {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px; cursor: pointer; user-select: none;
+    font-family: var(--mono); font-size: 13px;
+  }
+  .dup-group-head:hover { background: rgba(255,255,255,.03); }
+  .dup-chevron {
+    display: inline-block; color: var(--accent); flex-shrink: 0;
+    transition: transform .15s;
+  }
+  .dup-chevron.open { transform: rotate(90deg); }
+  .dup-kept-name { color: var(--text); font-weight: 600; flex: 1; }
+  .dup-kept-phone { color: var(--text); }
+  .dup-kept-line { color: var(--muted); }
+  .dup-badge {
+    background: var(--accent-dim); color: var(--accent);
+    border-radius: 20px; padding: 2px 10px; font-size: 11px; flex-shrink: 0;
+  }
+  .dup-group-body {
+    border-top: 1px solid var(--border);
+    background: rgba(0,0,0,.15);
+  }
+  .dup-sub-row {
+    display: grid; grid-template-columns: 70px 1fr 130px 140px;
+    gap: 12px; padding: 8px 14px 8px 40px;
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+    border-bottom: 1px solid rgba(46,46,69,.4);
+  }
+  .dup-sub-row:last-child { border-bottom: none; }
+
   .misplaced-item {
     display: flex; align-items: flex-start; gap: 12px;
     padding: 12px 14px; border-radius: 8px;
@@ -432,6 +560,34 @@
     <div class="logo-tag">Higienizador de listas v1.1</div>
   </header>
 
+  <!-- BATCH TRAY -->
+  <div class="card hidden" id="batchTray">
+    <div class="card-header">
+      <div class="step-badge" style="background:var(--accent-dim); color:var(--accent); border:1.5px solid var(--accent);">🗂</div>
+      <div class="card-title">Lote de listas (<span id="batchCount">0</span>)</div>
+    </div>
+    <div id="batchChips"></div>
+    <div class="divider"></div>
+    <div class="toggle-row" onclick="toggleBatchOrigin()">
+      <div class="toggle-label-group">
+        <label for="batchAddOrigin">Adicionar coluna com o nome da lista de origem</label>
+        <span class="info-tip" onclick="event.stopPropagation()" data-tip="Cada linha do arquivo combinado ganha uma coluna extra indicando de qual lista original ela veio.">i</span>
+      </div>
+      <label class="sw" onclick="event.stopPropagation()">
+        <input type="checkbox" id="batchAddOrigin" checked/>
+        <span class="sw-track"></span>
+      </label>
+    </div>
+    <div class="field-group" style="margin-top:16px; max-width:280px;">
+      <div class="field-label">Nome da coluna de origem</div>
+      <input class="range-input" id="batchOriginName" type="text" value="lista_origem"/>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btnMergeLists" type="button" onclick="doMerge()" disabled>🔗 Juntar listas em uma</button>
+      <button class="btn btn-ghost" type="button" onclick="clearBatch()">Limpar lote</button>
+    </div>
+  </div>
+
   <!-- STEP 1 -->
   <div class="card highlighted" id="step1">
     <div class="card-header">
@@ -439,19 +595,25 @@
       <div class="card-title">Enviar arquivo</div>
     </div>
     <div class="dropzone" id="dropzone">
-      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv,.pdf"/>
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv,.pdf" multiple/>
       <div class="dz-icon">📂</div>
-      <div class="dz-title">Solte o arquivo aqui ou clique para selecionar</div>
-      <div class="dz-sub">Suporta: .xlsx · .xls · .csv · .pdf</div>
+      <div class="dz-title">Solte o(s) arquivo(s) aqui ou clique para selecionar</div>
+      <div class="dz-sub">Suporta: .xlsx · .xls · .csv · .pdf — selecione várias listas de uma vez, elas são higienizadas uma por uma</div>
     </div>
     <div id="fileBadge" class="hidden"></div>
   </div>
+
+  <div class="merge-recap hidden" id="mergeRecapBox"></div>
 
   <!-- STEP 2 -->
   <div class="card" id="step2">
     <div class="card-header">
       <div class="step-badge dim" id="b2">2</div>
       <div class="card-title">Configurar colunas</div>
+      <div class="header-actions">
+        <button class="btn btn-ghost btn-compact" type="button" onclick="openEditorModal()">✏️ Editar dados</button>
+        <span class="info-tip" data-tip="Corrija valores errados ou renomeie colunas direto na planilha enviada, sem precisar abrir em outro programa. Vale para o arquivo inteiro, com busca e paginação — não só o que aparece na prévia.">i</span>
+      </div>
     </div>
 
     <div class="row-2">
@@ -472,24 +634,32 @@
 
     <div class="divider"></div>
 
-    <div class="toggle-row" onclick="toggleSplit()">
-      <label for="splitNames">
-        Dividir nome em <span>first_name</span> e <span>last_name</span>
-      </label>
-      <label class="sw" onclick="event.stopPropagation()">
-        <input type="checkbox" id="splitNames" checked/>
-        <span class="sw-track"></span>
-      </label>
-    </div>
+    <div class="toggle-grid">
+      <div class="toggle-row" onclick="toggleSplit()">
+        <div class="toggle-label-group">
+          <label for="splitNames">
+            Dividir nome em <span>first_name</span> e <span>last_name</span>
+          </label>
+          <span class="info-tip" onclick="event.stopPropagation()" data-tip="Cria duas colunas extras (first_name e last_name) a partir da coluna de nome escolhida, mantendo a coluna original também.">i</span>
+        </div>
+        <label class="sw" onclick="event.stopPropagation()">
+          <input type="checkbox" id="splitNames" checked/>
+          <span class="sw-track"></span>
+        </label>
+      </div>
 
-    <div class="toggle-row" style="margin-top:12px;" onclick="toggleRowRange()">
-      <label for="useRowRange">
-        Higienizar apenas um <span>intervalo de linhas</span>
-      </label>
-      <label class="sw" onclick="event.stopPropagation()">
-        <input type="checkbox" id="useRowRange"/>
-        <span class="sw-track"></span>
-      </label>
+      <div class="toggle-row" onclick="toggleRowRange()">
+        <div class="toggle-label-group">
+          <label for="useRowRange">
+            Higienizar apenas um <span>intervalo de linhas</span>
+          </label>
+          <span class="info-tip" onclick="event.stopPropagation()" data-tip="Processa e exporta só as linhas do intervalo escolhido (ex.: da 50 à 100), ignorando o resto do arquivo original.">i</span>
+        </div>
+        <label class="sw" onclick="event.stopPropagation()">
+          <input type="checkbox" id="useRowRange"/>
+          <span class="sw-track"></span>
+        </label>
+      </div>
     </div>
 
     <div class="range-panel hidden" id="rowRangePanel">
@@ -508,7 +678,7 @@
     </div>
 
     <div class="btn-row">
-      <button class="btn btn-primary" id="btnProcess" disabled onclick="doProcess()">
+      <button class="btn btn-primary btn-block" id="btnProcess" disabled onclick="doProcess()">
         ⚡ Processar lista
       </button>
     </div>
@@ -531,9 +701,16 @@
       <div class="card-title">Resultado & Download</div>
     </div>
 
-    <div class="stats" id="statsBar"></div>
     <div id="summaryBox"></div>
-    <div id="warnBox"></div>
+
+    <div class="btn-row">
+      <button class="btn btn-ghost" type="button" onclick="addCurrentListToBatch()">➕ Adicionar esta lista ao lote e enviar outra</button>
+    </div>
+
+    <div class="dirty-banner hidden" id="dataDirtyBanner">
+      <span>✏️ Você alterou dados de origem — reprocesse para atualizar os resultados.</span>
+      <button class="btn btn-primary" type="button" onclick="reprocessAfterEdit(this)">Reprocessar agora</button>
+    </div>
 
     <div class="preview-tabs">
       <div class="preview-tab active" id="tabBefore" onclick="switchTab('before')">📄 Antes (original)</div>
@@ -593,10 +770,19 @@
         <div class="fmt-pill on" data-fmt="xlsx" onclick="setFmt(this)">📊 XLSX</div>
         <div class="fmt-pill" data-fmt="csv" onclick="setFmt(this)">📄 CSV</div>
       </div>
-      <button class="btn btn-primary" onclick="doDownload()">Baixar agora</button>
+      <div class="dl-actions">
+        <button class="btn btn-primary btn-block" onclick="doDownload()">⬇ Baixar agora</button>
+        <button class="btn btn-ghost btn-block" onclick="doExportReport(this)">
+          🔎 Exportar relatório em PDF
+          <span class="info-tip" onclick="event.stopPropagation()" data-tip="Gera um PDF com o resumo e uma lista detalhada de cada categoria (linhas vazias, telefones inválidos, duplicatas etc.) — o mesmo conteúdo dos popups de auditoria, para guardar ou enviar.">i</span>
+        </button>
+      </div>
 
       <div class="split-box">
-        <div class="dl-title" style="font-size:15px; margin-bottom:12px;">🧩 Dividir lista em partes</div>
+        <div class="split-box-title">
+          🧩 Dividir lista em partes
+          <span class="info-tip" data-tip="Gera vários arquivos menores a partir da lista final, cada um com uma parte dos contatos — útil para respeitar limites de importação de outras ferramentas.">i</span>
+        </div>
         <div class="split-grid">
           <div class="field-group">
             <div class="field-label">Quantidade de partes</div>
@@ -646,6 +832,66 @@
   </div>
 </div>
 
+<!-- Batch list report modal -->
+<div class="modal-bg" id="batchReportModal">
+  <div class="modal" style="max-width:600px">
+    <h2 id="batchReportTitle">📄 Relatório</h2>
+    <div id="batchReportBody"></div>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" type="button" onclick="closeBatchReportModal()">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Audit detail modal -->
+<div class="modal-bg" id="auditModal">
+  <div class="modal" style="max-width:820px">
+    <h2 id="auditTitle">Detalhes</h2>
+    <p id="auditDesc" style="margin-bottom:14px"></p>
+    <div id="auditTableWrap" class="table-wrap" style="max-height:420px; overflow-y:auto; margin-bottom:20px;"></div>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" type="button" onclick="closeAuditModal()">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Data editor modal -->
+<div class="modal-bg" id="editorModal">
+  <div class="modal" style="max-width:960px">
+    <h2>✏️ Editar dados da planilha</h2>
+    <p>Clique numa célula para alterar o valor, ou duas vezes no cabeçalho para renomear a coluna. As mudanças valem para o arquivo inteiro — use a busca e a paginação para alcançar qualquer linha.</p>
+    <div class="editor-toolbar">
+      <input class="preview-search" id="editorSearch" type="text" placeholder="Buscar em qualquer coluna"/>
+      <select class="fsel" id="editorPageSize">
+        <option value="25">25 por página</option>
+        <option value="50" selected>50 por página</option>
+        <option value="100">100 por página</option>
+      </select>
+    </div>
+    <div class="editor-actions">
+      <button class="btn btn-ghost btn-compact" type="button" onclick="addEditorRow()">➕ Nova linha</button>
+      <button class="btn btn-ghost btn-compact" type="button" onclick="addEditorColumn()">➕ Nova coluna</button>
+    </div>
+    <div class="editor-bulk-bar hidden" id="editorBulkBar">
+      <button class="btn btn-danger btn-compact" type="button" id="editorBulkDeleteRowsBtn" onclick="bulkDeleteEditorRows()" disabled>🗑 Excluir 0 linha(s) selecionada(s)</button>
+      <button class="btn btn-danger btn-compact" type="button" id="editorBulkDeleteColsBtn" onclick="bulkDeleteEditorColumns()" disabled>🗑 Excluir 0 coluna(s) selecionada(s)</button>
+    </div>
+    <div class="editor-undo-bar hidden" id="editorUndoBar">
+      <span>Última exclusão pode ser desfeita.</span>
+      <button class="btn btn-ghost btn-compact" type="button" onclick="undoLastDelete()">↩️ Desfazer exclusão</button>
+    </div>
+    <div id="editorTableWrap" class="table-wrap" style="max-height:420px; overflow-y:auto; margin:16px 0;"></div>
+    <div class="editor-pager">
+      <button class="btn btn-ghost" type="button" id="editorPrevBtn" onclick="editorGoPage(-1)">← Anterior</button>
+      <span id="editorPageInfo" class="rows-note" style="margin:0">Página 1 de 1</span>
+      <button class="btn btn-ghost" type="button" id="editorNextBtn" onclick="editorGoPage(1)">Próxima →</button>
+    </div>
+    <div class="modal-btns" style="margin-top:16px">
+      <button class="btn btn-primary" type="button" onclick="closeEditorModal()">Concluir edição</button>
+    </div>
+  </div>
+</div>
+
 <script>
 let selectedCols = new Set();
 let lastConfig = {};
@@ -656,6 +902,11 @@ let misplacedResolve = null;
 let pendingMisplaced = [];
 let downloadFmt = 'xlsx';
 let lastProcessedTotal = 0;
+let lastFileName = null;
+let lastResultData = null;
+let batchLists = [];
+let activeFile = null;
+let queuedFiles = [];
 let previewMeta = null;
 let previewState = {
   active: 'before',
@@ -664,6 +915,348 @@ let previewState = {
 };
 let previewSearchTimer = null;
 let previewRequestId = 0;
+let lastAuditData = {};
+
+const AUDIT_CATEGORIES = {
+  empty_rows: {
+    title: 'Linhas vazias removidas',
+    desc: 'Todas as colunas estavam em branco nessas linhas — foram descartadas antes de qualquer outra etapa.',
+    columns: [{ key: 'line', label: 'Linha' }],
+  },
+  multi_phone: {
+    title: 'Linhas com mais de um telefone',
+    desc: 'A célula de telefone continha vários números — cada um virou uma linha própria no arquivo final.',
+    columns: [
+      { key: 'line', label: 'Linha' },
+      { key: 'name', label: 'Nome' },
+      { key: 'before', label: 'Valor original' },
+      { key: 'after', label: 'Números separados', render: v => (v || []).join(', ') },
+    ],
+  },
+  invalid_phone: {
+    title: 'Entradas de telefone inválidas',
+    desc: 'Não foi possível reconhecer esses valores como um telefone válido.',
+    columns: [
+      { key: 'line', label: 'Linha' },
+      { key: 'name', label: 'Nome' },
+      { key: 'before', label: 'Valor original' },
+      { key: 'reason', label: 'Motivo' },
+    ],
+  },
+  no_phone: {
+    title: 'Linhas removidas por ficar sem telefone',
+    desc: 'Depois da limpeza, a linha ficou sem nenhum telefone válido e foi removida do resultado final.',
+    columns: [
+      { key: 'line', label: 'Linha' },
+      { key: 'name', label: 'Nome' },
+      { key: 'before', label: 'Valor antes' },
+      { key: 'reason', label: 'Motivo' },
+    ],
+  },
+  duplicates_found: {
+    title: 'Duplicatas encontradas',
+    desc: 'O contato mantido de cada grupo aparece sempre. Clique na seta para ver quem mais compartilha o mesmo telefone.',
+    sourceKey: 'duplicates',
+    grouped: true,
+    onlyRemoved: false,
+  },
+  duplicates_removed: {
+    title: 'Duplicatas removidas',
+    desc: 'O contato mantido de cada grupo aparece sempre. Clique na seta para ver quem foi removido por duplicação.',
+    sourceKey: 'duplicates',
+    grouped: true,
+    onlyRemoved: true,
+  },
+};
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[ch]));
+}
+
+function buildDuplicateGroups(rows, onlyRemoved) {
+  const byPhone = new Map();
+  rows.forEach(r => {
+    if (!byPhone.has(r.phone)) byPhone.set(r.phone, []);
+    byPhone.get(r.phone).push(r);
+  });
+
+  const groups = [];
+  byPhone.forEach((entries, phone) => {
+    const kept = entries.find(e => e.status === 'Original mantida') || entries[0];
+    let others = entries.filter(e => e !== kept);
+    if (onlyRemoved) others = others.filter(e => e.status === 'Duplicada removida');
+    if (onlyRemoved && !others.length) return;
+    groups.push({ phone, kept, others });
+  });
+  return groups;
+}
+
+function renderDuplicateGroupsHtml(groups) {
+  if (!groups.length) {
+    return '<div class="empty-state" style="padding:24px; text-align:center;">Nenhum registro nessa categoria.</div>';
+  }
+  return '<div class="dup-groups">' + groups.map((g, i) => `
+    <div class="dup-group">
+      <div class="dup-group-head" onclick="toggleDupGroup(${i})">
+        <span class="dup-chevron" id="dupChevron${i}">▶</span>
+        <span class="dup-kept-name">${escapeHtml(g.kept.name || '(sem nome)')}</span>
+        <span class="dup-kept-phone">${escapeHtml(g.kept.phone)}</span>
+        <span class="dup-kept-line">Linha ${escapeHtml(g.kept.line)}</span>
+        <span class="dup-badge">${g.others.length} duplicata${g.others.length === 1 ? '' : 's'}</span>
+      </div>
+      <div class="dup-group-body hidden" id="dupBody${i}">
+        ${g.others.map(o => `
+          <div class="dup-sub-row">
+            <span>Linha ${escapeHtml(o.line)}</span>
+            <span>${escapeHtml(o.name || '(sem nome)')}</span>
+            <span>${escapeHtml(o.phone)}</span>
+            <span>${escapeHtml(o.status)}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `).join('') + '</div>';
+}
+
+function toggleDupGroup(i) {
+  const body = document.getElementById(`dupBody${i}`);
+  const chevron = document.getElementById(`dupChevron${i}`);
+  const open = body.classList.toggle('hidden') === false;
+  chevron.classList.toggle('open', open);
+}
+
+function openAuditModal(category) {
+  const cfg = AUDIT_CATEGORIES[category];
+  if (!cfg) return;
+  const sourceKey = cfg.sourceKey || category;
+  let rows = lastAuditData[sourceKey] || [];
+  if (cfg.filter) rows = rows.filter(cfg.filter);
+
+  document.getElementById('auditTitle').textContent = cfg.title;
+  document.getElementById('auditDesc').textContent = cfg.desc;
+
+  const wrap = document.getElementById('auditTableWrap');
+  if (cfg.grouped) {
+    wrap.innerHTML = renderDuplicateGroupsHtml(buildDuplicateGroups(rows, cfg.onlyRemoved));
+  } else if (!rows.length) {
+    wrap.innerHTML = '<div class="empty-state" style="padding:24px; text-align:center;">Nenhum registro nessa categoria.</div>';
+  } else {
+    const ths = cfg.columns.map(c => `<th>${escapeHtml(c.label)}</th>`).join('');
+    const trs = rows.map(r => '<tr>' + cfg.columns.map(c => {
+      const raw = c.render ? c.render(r[c.key]) : (r[c.key] ?? '');
+      return `<td>${escapeHtml(raw)}</td>`;
+    }).join('') + '</tr>').join('');
+    wrap.innerHTML = `<table><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
+  }
+  document.getElementById('auditModal').classList.add('open');
+}
+
+function closeAuditModal() {
+  document.getElementById('auditModal').classList.remove('open');
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (document.getElementById('auditModal').classList.contains('open')) {
+    closeAuditModal();
+  } else if (document.getElementById('editorModal').classList.contains('open')) {
+    closeEditorModal();
+  }
+});
+
+// ── Data editor (dedicated popup, reaches every row regardless of preview limits) ──
+let editorState = { search: '', page: 0, pageSize: 50, filteredTotal: 0 };
+let editorSearchTimer = null;
+let editorSelectedRows = new Set();
+let editorSelectedCols = new Set();
+let editorUndoAvailable = false;
+
+function openEditorModal() {
+  if (!uploadToken) {
+    showNotice('Envie o arquivo primeiro para poder editar os dados.', 'Edição indisponível');
+    return;
+  }
+  editorState.search = '';
+  editorState.page = 0;
+  editorState.pageSize = Number(document.getElementById('editorPageSize').value) || 50;
+  document.getElementById('editorSearch').value = '';
+  editorSelectedRows.clear();
+  editorSelectedCols.clear();
+  updateEditorBulkBar();
+  document.getElementById('editorUndoBar').classList.toggle('hidden', !editorUndoAvailable);
+  document.getElementById('editorModal').classList.add('open');
+  loadEditorPage();
+}
+
+function showEditorUndoBar() {
+  editorUndoAvailable = true;
+  document.getElementById('editorUndoBar').classList.remove('hidden');
+}
+
+function hideEditorUndoBar() {
+  editorUndoAvailable = false;
+  document.getElementById('editorUndoBar').classList.add('hidden');
+}
+
+async function undoLastDelete() {
+  if (!uploadToken || !editorUndoAvailable) return;
+  try {
+    const fd = new FormData();
+    fd.append('upload_token', uploadToken);
+    const res = await fetch('/undo_delete', { method: 'POST', body: fd });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw (data?.error || new Error('Erro ao desfazer exclusão'));
+
+    hideEditorUndoBar();
+    editorSelectedRows.clear();
+    editorSelectedCols.clear();
+    updateEditorBulkBar();
+    await loadEditorPage();
+    markDataDirty();
+  } catch (e) {
+    showNotice(e, 'Falha ao desfazer exclusão');
+  }
+}
+
+function toggleRowSelect(idx, checked) {
+  if (checked) editorSelectedRows.add(idx);
+  else editorSelectedRows.delete(idx);
+  updateEditorBulkBar();
+}
+
+function toggleColSelect(name, checked) {
+  if (checked) editorSelectedCols.add(name);
+  else editorSelectedCols.delete(name);
+  updateEditorBulkBar();
+}
+
+function toggleSelectAllRows(checked) {
+  document.querySelectorAll('#editorTableWrap .row-select-cb[data-row]').forEach(cb => {
+    cb.checked = checked;
+    const idx = Number(cb.dataset.row);
+    if (checked) editorSelectedRows.add(idx);
+    else editorSelectedRows.delete(idx);
+  });
+  updateEditorBulkBar();
+}
+
+function updateEditorBulkBar() {
+  const bar = document.getElementById('editorBulkBar');
+  const rowBtn = document.getElementById('editorBulkDeleteRowsBtn');
+  const colBtn = document.getElementById('editorBulkDeleteColsBtn');
+  const rowCount = editorSelectedRows.size;
+  const colCount = editorSelectedCols.size;
+  bar.classList.toggle('hidden', rowCount === 0 && colCount === 0);
+  rowBtn.textContent = `🗑 Excluir ${rowCount} linha(s) selecionada(s)`;
+  rowBtn.disabled = rowCount === 0;
+  colBtn.textContent = `🗑 Excluir ${colCount} coluna(s) selecionada(s)`;
+  colBtn.disabled = colCount === 0;
+}
+
+async function bulkDeleteEditorRows() {
+  if (!uploadToken || editorSelectedRows.size === 0) return;
+  const count = editorSelectedRows.size;
+  if (!confirm(`Excluir ${count} linha(s) selecionada(s) da planilha? Dá para desfazer logo em seguida.`)) return;
+  try {
+    const fd = new FormData();
+    fd.append('upload_token', uploadToken);
+    fd.append('row_indices', JSON.stringify(Array.from(editorSelectedRows)));
+    const res = await fetch('/delete_rows', { method: 'POST', body: fd });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw (data?.error || new Error('Erro ao excluir linhas'));
+
+    editorSelectedRows.clear();
+    const totalPages = Math.max(1, Math.ceil(data.total_rows / editorState.pageSize));
+    if (editorState.page >= totalPages) editorState.page = totalPages - 1;
+    await loadEditorPage();
+    updateEditorBulkBar();
+    showEditorUndoBar();
+    markDataDirty();
+  } catch (e) {
+    showNotice(e, 'Falha ao excluir linhas selecionadas');
+  }
+}
+
+async function bulkDeleteEditorColumns() {
+  if (!uploadToken || editorSelectedCols.size === 0) return;
+  const names = Array.from(editorSelectedCols);
+  if (!confirm(`Excluir ${names.length} coluna(s) selecionada(s)? Dá para desfazer logo em seguida.`)) return;
+  try {
+    const fd = new FormData();
+    fd.append('upload_token', uploadToken);
+    fd.append('columns', JSON.stringify(names));
+    const res = await fetch('/delete_columns', { method: 'POST', body: fd });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw (data?.error || new Error('Erro ao excluir colunas'));
+
+    names.forEach(removeColumnFromUI);
+    editorSelectedCols.clear();
+    await loadEditorPage();
+    updateEditorBulkBar();
+    showEditorUndoBar();
+    markDataDirty();
+  } catch (e) {
+    showNotice(e, 'Falha ao excluir colunas selecionadas');
+  }
+}
+
+function closeEditorModal() {
+  document.getElementById('editorModal').classList.remove('open');
+  // Refresh whatever is currently on screen so edits made here become visible.
+  if (previewMeta?.[previewState.active]) loadPreview(previewState.active);
+}
+
+async function loadEditorPage() {
+  const wrap = document.getElementById('editorTableWrap');
+  const fd = new FormData();
+  fd.append('upload_token', uploadToken || '');
+  fd.append('config', JSON.stringify(lastConfig));
+  fd.append('stage', 'before');
+  fd.append('search', editorState.search);
+  fd.append('limit', editorState.pageSize);
+  fd.append('offset', editorState.page * editorState.pageSize);
+
+  try {
+    const res = await fetch('/preview', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw (data.error || new Error('Erro ao carregar dados para edição'));
+
+    editorState.filteredTotal = data.filtered_total ?? 0;
+    buildTable('editorTableWrap', data.columns || [], data.rows || [], 'Nenhum registro encontrado.', true);
+
+    const totalPages = Math.max(1, Math.ceil(editorState.filteredTotal / editorState.pageSize));
+    document.getElementById('editorPageInfo').textContent =
+      `Página ${editorState.page + 1} de ${totalPages} · ${editorState.filteredTotal} linha(s)`;
+    document.getElementById('editorPrevBtn').disabled = editorState.page <= 0;
+    document.getElementById('editorNextBtn').disabled = editorState.page + 1 >= totalPages;
+  } catch (e) {
+    wrap.innerHTML = '';
+    showNotice(e, 'Falha ao carregar dados para edição');
+  }
+}
+
+function editorGoPage(delta) {
+  const totalPages = Math.max(1, Math.ceil(editorState.filteredTotal / editorState.pageSize));
+  const next = editorState.page + delta;
+  if (next < 0 || next >= totalPages) return;
+  editorState.page = next;
+  loadEditorPage();
+}
+
+document.getElementById('editorSearch').addEventListener('input', (e) => {
+  editorState.search = e.target.value;
+  editorState.page = 0;
+  if (editorSearchTimer) clearTimeout(editorSearchTimer);
+  editorSearchTimer = setTimeout(loadEditorPage, 220);
+});
+
+document.getElementById('editorPageSize').addEventListener('change', (e) => {
+  editorState.pageSize = Number(e.target.value) || 50;
+  editorState.page = 0;
+  loadEditorPage();
+});
 
 // ── File upload ──
 const dzEl   = document.getElementById('dropzone');
@@ -733,7 +1326,7 @@ dzEl.addEventListener('dragover', e => { e.preventDefault(); dzEl.classList.add(
 dzEl.addEventListener('dragleave', () => dzEl.classList.remove('drag'));
 dzEl.addEventListener('drop', e => {
   e.preventDefault(); dzEl.classList.remove('drag');
-  if (e.dataTransfer.files[0]) { fileEl.files = e.dataTransfer.files; onFile(); }
+  if (e.dataTransfer.files.length) { fileEl.files = e.dataTransfer.files; onFile(); }
 });
 fileEl.addEventListener('change', onFile);
 previewSearchEl.addEventListener('input', () => {
@@ -769,13 +1362,13 @@ previewDateToEl.addEventListener('change', () => {
 splitPartsCountEl.addEventListener('change', renderSplitDownloads);
 useRowRangeEl.addEventListener('change', syncRowRangePanel);
 
-async function onFile() {
-  const f = fileEl.files[0];
-  if (!f) return;
+function resetWizardState() {
   clearNotices();
   lastConfig = {};
   lastPhoneFixes = [];
   uploadToken = null;
+  lastResultData = null;
+  editorUndoAvailable = false;
   previewMeta = null;
   pendingMisplaced = [];
   useRowRangeEl.checked = false;
@@ -785,6 +1378,46 @@ async function onFile() {
   rowEndEl.min = '1';
   syncRowRangePanel();
 
+  document.getElementById('mergeRecapBox').classList.add('hidden');
+  document.getElementById('step3').classList.add('hidden');
+  activate('step3', false);
+  document.getElementById('b3').classList.add('dim');
+  document.getElementById('b1').classList.remove('done');
+  document.getElementById('b1').textContent = '1';
+  document.getElementById('b2').classList.add('dim');
+  document.getElementById('btnProcess').disabled = true;
+  activate('step2', false);
+  activate('step1', true);
+}
+
+function enterColumnMappingStep(data, badgeHtml) {
+  uploadToken = data.upload_token || null;
+
+  const badge = document.getElementById('fileBadge');
+  badge.innerHTML = `<div class="file-badge">${badgeHtml}</div>`;
+  badge.classList.remove('hidden');
+
+  rowStartEl.max = String(data.total_rows || 1);
+  rowEndEl.max = String(data.total_rows || 1);
+  rowStartEl.placeholder = `Ex.: 1`;
+  rowEndEl.placeholder = `Ex.: ${data.total_rows || 1}`;
+
+  buildColumnConfig(data.columns, data.suggested_columns || {});
+
+  activate('step1', false);
+  activate('step2', true);
+  document.getElementById('b1').classList.add('done');
+  document.getElementById('b1').textContent = '✓';
+  document.getElementById('b2').classList.remove('dim');
+  document.getElementById('btnProcess').disabled = false;
+  document.getElementById('step2').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function loadFile(file) {
+  resetWizardState();
+  activeFile = file;
+  lastFileName = file.name;
+
   const badge = document.getElementById('fileBadge');
   badge.innerHTML = '<div class="file-badge"><span class="spin"></span> Lendo arquivo…</div>';
   badge.classList.remove('hidden');
@@ -792,7 +1425,7 @@ async function onFile() {
   let data;
   try {
     const fd = new FormData();
-    fd.append('file', f);
+    fd.append('file', file);
     const res = await fetch('/upload', { method: 'POST', body: fd });
     data = await res.json();
   } catch (e) {
@@ -813,24 +1446,15 @@ async function onFile() {
     return;
   }
 
-  uploadToken = data.upload_token || null;
+  const queueNote = queuedFiles.length ? ` · +${queuedFiles.length} na fila` : '';
+  enterColumnMappingStep(data, `✓ ${file.name} — ${data.total_rows} linhas · ${data.columns.length} colunas${queueNote}`);
+}
 
-  badge.innerHTML =
-    `<div class="file-badge">✓ ${f.name} — ${data.total_rows} linhas · ${data.columns.length} colunas</div>`;
-
-  rowStartEl.max = String(data.total_rows || 1);
-  rowEndEl.max = String(data.total_rows || 1);
-  rowStartEl.placeholder = `Ex.: 1`;
-  rowEndEl.placeholder = `Ex.: ${data.total_rows || 1}`;
-
-  buildColumnConfig(data.columns, data.suggested_columns || {});
-
-  activate('step1', false);
-  activate('step2', true);
-  document.getElementById('b1').classList.add('done');
-  document.getElementById('b1').textContent = '✓';
-  document.getElementById('b2').classList.remove('dim');
-  document.getElementById('btnProcess').disabled = false;
+async function onFile() {
+  const files = Array.from(fileEl.files || []);
+  if (!files.length) return;
+  queuedFiles = files.slice(1);
+  await loadFile(files[0]);
 }
 
 function buildColumnConfig(cols, suggested = {}) {
@@ -979,7 +1603,7 @@ function streamProcess(cfg, forceFile = false) {
   return new Promise((resolve) => {
     const fd = new FormData();
     if (uploadToken && !forceFile) fd.append('upload_token', uploadToken);
-    else fd.append('file', fileEl.files[0]);
+    else fd.append('file', activeFile);
     fd.append('config', JSON.stringify(cfg));
 
     fetch('/process_stream', { method: 'POST', body: fd })
@@ -999,7 +1623,7 @@ function streamProcess(cfg, forceFile = false) {
               try {
                 const payload = JSON.parse(line.slice(5).trim());
                 if (payload.error) {
-                  if (uploadToken && !forceFile && fileEl.files[0] && shouldRetryWithFile(payload.error)) {
+                  if (uploadToken && !forceFile && activeFile && shouldRetryWithFile(payload.error)) {
                     uploadToken = null;
                     resolve(streamProcess(cfg, true));
                     return;
@@ -1155,7 +1779,7 @@ async function loadPreview(stage, forceFile = false) {
 
   const fd = new FormData();
   if (uploadToken && !forceFile) fd.append('upload_token', uploadToken);
-  else fd.append('file', fileEl.files[0]);
+  else fd.append('file', activeFile);
   fd.append('config', JSON.stringify(lastConfig));
   fd.append('stage', stage);
   fd.append('search', state.search || '');
@@ -1169,7 +1793,7 @@ async function loadPreview(stage, forceFile = false) {
   try {
     const res = await fetch('/preview', { method: 'POST', body: fd });
     if (!res.ok) {
-      if (uploadToken && !forceFile && fileEl.files[0]) {
+      if (uploadToken && !forceFile && activeFile) {
         uploadToken = null;
         return loadPreview(stage, true);
       }
@@ -1202,6 +1826,7 @@ async function loadPreview(stage, forceFile = false) {
 
 // ── Results ──
 function showResults(data) {
+  lastResultData = data;
   const s3 = document.getElementById('step3');
   s3.classList.remove('hidden');
   activate('step3', true);
@@ -1217,40 +1842,39 @@ function showResults(data) {
   const finalRows = metrics.final_rows ?? data.total_after ?? 0;
   const totalRemoved = emptyRowsRemoved + rowsRemovedWithoutPhone + duplicatesRemoved;
   lastProcessedTotal = finalRows;
+  lastAuditData = data.audit || {};
 
-  document.getElementById('statsBar').innerHTML = `
-    <div class="stat"><div class="stat-val">${originalRows}</div><div class="stat-key">Linhas originais</div></div>
-    <div class="stat"><div class="stat-val">${extraRows}</div><div class="stat-key">Expandidas por telefone</div></div>
-    <div class="stat"><div class="stat-val">${totalRemoved}</div><div class="stat-key">Removidas no processo</div></div>
-    <div class="stat"><div class="stat-val">${finalRows}</div><div class="stat-key">Linhas finais</div></div>
-    <div class="stat"><div class="stat-val">${data.warnings.length}</div><div class="stat-key">Avisos</div></div>
-  `;
+  const dupWasRemoved = (lastConfig.dup_action || 'keep') === 'remove';
+  const dupCategory = dupWasRemoved ? 'duplicates_removed' : 'duplicates_found';
+  const dupLabel = dupWasRemoved ? 'Duplicatas removidas' : 'Duplicatas encontradas';
+  const dupCount = dupWasRemoved ? duplicatesRemoved : duplicatesFound;
 
   document.getElementById('summaryBox').innerHTML = `
     <div class="summary-box">
-      <div class="summary-title">Resumo da conta</div>
-      <div class="summary-formula">
-        <strong>${originalRows}</strong> originais
-        + <strong>${extraRows}</strong> expansões
-        - <strong>${totalRemoved}</strong> removidas
-        = <strong>${finalRows}</strong> finais
+      <div class="summary-title">
+        Resumo da higienização
+        <span class="info-tip" data-tip="Originais: linhas do arquivo enviado. Expansões: linhas extras criadas quando uma célula tinha mais de um telefone. Removidas: linhas descartadas por estarem vazias, duplicadas ou sem telefone válido. Finais: o que sobra no arquivo baixado.">i</span>
       </div>
+
+      <div class="summary-hero">
+        <div class="summary-hero-item"><div class="summary-hero-val">${originalRows}</div><div class="summary-hero-key">originais</div></div>
+        <div class="summary-hero-item"><div class="summary-hero-val">${extraRows}</div><div class="summary-hero-key">expansões</div></div>
+        <div class="summary-hero-item"><div class="summary-hero-val">${totalRemoved}</div><div class="summary-hero-key">removidas</div></div>
+        <div class="summary-hero-item"><div class="summary-hero-val">${finalRows}</div><div class="summary-hero-key">finais</div></div>
+      </div>
+
+      <div class="summary-divider"></div>
+
       <div class="summary-list">
-        <div class="summary-item">Linhas vazias removidas: <strong>${emptyRowsRemoved}</strong></div>
-        <div class="summary-item">Linhas com mais de um telefone: <strong>${metrics.rows_with_multiple_phones ?? 0}</strong></div>
-        <div class="summary-item">Entradas de telefone inválidas: <strong>${invalidPhoneEntries}</strong></div>
-        <div class="summary-item">Linhas removidas por ficar sem telefone: <strong>${rowsRemovedWithoutPhone}</strong></div>
-        <div class="summary-item">Duplicatas encontradas: <strong>${duplicatesFound}</strong></div>
-        <div class="summary-item">Duplicatas removidas: <strong>${duplicatesRemoved}</strong></div>
+        <div class="summary-item auditable" onclick="openAuditModal('empty_rows')">Linhas vazias removidas: <strong>${emptyRowsRemoved}</strong></div>
+        <div class="summary-item auditable" onclick="openAuditModal('multi_phone')">Linhas com mais de um telefone: <strong>${metrics.rows_with_multiple_phones ?? 0}</strong></div>
+        <div class="summary-item auditable" onclick="openAuditModal('invalid_phone')">Entradas de telefone inválidas: <strong>${invalidPhoneEntries}</strong></div>
+        <div class="summary-item auditable" onclick="openAuditModal('no_phone')">Linhas removidas por ficar sem telefone: <strong>${rowsRemovedWithoutPhone}</strong></div>
+        <div class="summary-item auditable" onclick="openAuditModal('${dupCategory}')">${dupLabel}: <strong>${dupCount}</strong></div>
       </div>
+      <div class="summary-hint" style="font-size:11px; color:var(--muted); margin-top:10px;">Clique em qualquer item acima para ver as linhas e o motivo, com antes e depois.</div>
     </div>
   `;
-
-  const wb = document.getElementById('warnBox');
-  wb.innerHTML = data.warnings.length
-    ? `<div class="warn-box"><div class="warn-box-title">⚠ ${data.warnings.length} aviso(s)</div>
-       <ul>${data.warnings.map(w => `<li>${w}</li>`).join('')}</ul></div>`
-    : '';
 
   resetPreviewState(data);
   renderSplitDownloads();
@@ -1258,15 +1882,297 @@ function showResults(data) {
   s3.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-function buildTable(id, cols, rows, emptyMsg = 'Nenhum registro para mostrar.') {
-  const ths = cols.map(c => `<th>${c}</th>`).join('');
+function buildTable(id, cols, rows, emptyMsg = 'Nenhum registro para mostrar.', editable = false) {
+  const colCount = cols.length + (editable ? 2 : 0);
+  const selectAllTh = editable
+    ? `<th class="th-actions"><input type="checkbox" id="editorSelectAllRows" class="row-select-cb" title="Selecionar todas as linhas desta página" onclick="toggleSelectAllRows(this.checked)"/></th>`
+    : '';
+  const ths = selectAllTh + cols.map(c => {
+    const safe = escapeHtml(c).replace(/'/g, "\\'");
+    return editable
+      ? `<th data-editable-col>
+           <div class="th-inner">
+             <input type="checkbox" class="col-select-cb" title="Selecionar coluna" onclick="toggleColSelect('${safe}', this.checked)" ${editorSelectedCols.has(c) ? 'checked' : ''}/>
+             <span class="th-label" title="Clique duas vezes para renomear" ondblclick="startHeaderRename(this, '${safe}')">${escapeHtml(c)}</span>
+             <button type="button" class="th-icon-btn" title="Excluir coluna" onclick="event.stopPropagation(); deleteEditorColumn('${safe}')">🗑</button>
+           </div>
+         </th>`
+      : `<th>${escapeHtml(c)}</th>`;
+  }).join('') + (editable ? '<th class="th-actions"></th>' : '');
   const trs = rows.length
-    ? rows.map(r =>
-        '<tr>' + cols.map(c => `<td>${r[c] ?? ''}</td>`).join('') + '</tr>'
-      ).join('')
-    : `<tr><td class="empty-state" colspan="${Math.max(cols.length, 1)}">${emptyMsg}</td></tr>`;
+    ? rows.map(r => {
+        const idx = r.__idx;
+        const selectTd = editable && idx !== undefined
+          ? `<td class="td-actions"><input type="checkbox" class="row-select-cb" data-row="${idx}" onclick="toggleRowSelect(${idx}, this.checked)" ${editorSelectedRows.has(idx) ? 'checked' : ''}/></td>`
+          : '';
+        const tds = selectTd + cols.map(c => {
+          const val = r[c] ?? '';
+          if (editable && idx !== undefined) {
+            return `<td contenteditable="true" spellcheck="false" data-row="${idx}" data-col="${escapeHtml(c)}" data-orig="${escapeHtml(val)}" onblur="commitCellEdit(this)" onkeydown="handleCellKeydown(event, this)">${escapeHtml(val)}</td>`;
+          }
+          return `<td>${escapeHtml(val)}</td>`;
+        }).join('') + (editable && idx !== undefined
+          ? `<td class="td-actions"><button type="button" class="row-delete-btn" title="Excluir linha" onclick="deleteEditorRow(${idx})">🗑</button></td>`
+          : '');
+        return '<tr>' + tds + '</tr>';
+      }).join('')
+    : `<tr><td class="empty-state" colspan="${Math.max(colCount, 1)}">${emptyMsg}</td></tr>`;
   document.getElementById(id).innerHTML =
     `<table><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
+}
+
+async function commitCellEdit(td) {
+  const value = td.textContent;
+  if (td.dataset.orig === value) return;
+  const rowIndex = td.dataset.row;
+  const column = td.dataset.col;
+  try {
+    const fd = new FormData();
+    fd.append('upload_token', uploadToken || '');
+    fd.append('row_index', rowIndex);
+    fd.append('column', column);
+    fd.append('value', value);
+    const res = await fetch('/edit_cell', { method: 'POST', body: fd });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw (data?.error || new Error('Erro ao salvar edição'));
+    td.dataset.orig = value;
+    td.classList.add('cell-saved');
+    setTimeout(() => td.classList.remove('cell-saved'), 700);
+    markDataDirty();
+  } catch (e) {
+    td.textContent = td.dataset.orig;
+    showNotice(e, 'Falha ao salvar edição');
+  }
+}
+
+function handleCellKeydown(e, td) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    td.blur();
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    td.textContent = td.dataset.orig;
+    td.blur();
+  }
+}
+
+function startHeaderRename(th, oldName) {
+  if (th.querySelector('input')) return;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'th-rename-input';
+  input.value = oldName;
+  th.textContent = '';
+  th.appendChild(input);
+  input.focus();
+  input.select();
+
+  let settled = false;
+  const finish = async (commit) => {
+    if (settled) return;
+    settled = true;
+    const newName = input.value.trim();
+    if (!commit || !newName || newName === oldName) {
+      th.textContent = oldName;
+      return;
+    }
+    try {
+      const fd = new FormData();
+      fd.append('upload_token', uploadToken || '');
+      fd.append('old_name', oldName);
+      fd.append('new_name', newName);
+      const res = await fetch('/rename_column', { method: 'POST', body: fd });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw (data?.error || new Error('Erro ao renomear coluna'));
+      applyColumnRename(oldName, newName);
+      markDataDirty();
+    } catch (e) {
+      th.textContent = oldName;
+      showNotice(e, 'Falha ao renomear coluna');
+    }
+  };
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(true));
+}
+
+function applyColumnRename(oldName, newName) {
+  if (lastConfig.name_col === oldName) lastConfig.name_col = newName;
+  if (lastConfig.phone_col === oldName) lastConfig.phone_col = newName;
+  if (Array.isArray(lastConfig.keep_cols)) {
+    lastConfig.keep_cols = lastConfig.keep_cols.map(c => c === oldName ? newName : c);
+  }
+  if (Array.isArray(lastConfig.phone_fixes)) {
+    lastConfig.phone_fixes.forEach(f => { if (f.found_col === oldName) f.found_col = newName; });
+  }
+
+  ['nameCol', 'phoneCol'].forEach(id => {
+    const opt = Array.from(document.getElementById(id).options).find(o => o.value === oldName);
+    if (opt) { opt.value = newName; opt.textContent = newName; }
+  });
+
+  const chip = document.querySelector(`#colChips .chip[data-col="${CSS.escape(oldName)}"]`);
+  if (chip) {
+    chip.dataset.col = newName;
+    const label = chip.querySelector('span:last-child');
+    if (label) label.textContent = newName;
+  }
+  if (selectedCols.has(oldName)) {
+    selectedCols.delete(oldName);
+    selectedCols.add(newName);
+  }
+
+  loadEditorPage();
+}
+
+function addColumnToUI(name) {
+  ['nameCol', 'phoneCol'].forEach(id => {
+    const sel = document.getElementById(id);
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    sel.appendChild(opt);
+  });
+
+  selectedCols.add(name);
+  const wrap = document.getElementById('colChips');
+  const chip = document.createElement('div');
+  chip.className = 'chip on';
+  chip.dataset.col = name;
+  chip.innerHTML = `<span class="dot"></span><span>${escapeHtml(name)}</span>`;
+  chip.addEventListener('click', () => {
+    chip.classList.toggle('on');
+    if (chip.classList.contains('on')) selectedCols.add(name);
+    else selectedCols.delete(name);
+  });
+  wrap.appendChild(chip);
+
+  if (Array.isArray(lastConfig.keep_cols) && !lastConfig.keep_cols.includes(name)) {
+    lastConfig.keep_cols.push(name);
+  }
+}
+
+async function addEditorRow() {
+  if (!uploadToken) return;
+  try {
+    const fd = new FormData();
+    fd.append('upload_token', uploadToken);
+    const res = await fetch('/add_row', { method: 'POST', body: fd });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw (data?.error || new Error('Erro ao adicionar linha'));
+
+    // Clear any active search/filter so the new (blank) row is guaranteed to be visible,
+    // then jump to the last page where it was appended.
+    editorState.search = '';
+    document.getElementById('editorSearch').value = '';
+    editorState.page = Math.floor(Math.max(0, data.total_rows - 1) / editorState.pageSize);
+    await loadEditorPage();
+    markDataDirty();
+  } catch (e) {
+    showNotice(e, 'Falha ao adicionar linha');
+  }
+}
+
+async function addEditorColumn() {
+  if (!uploadToken) return;
+  try {
+    const fd = new FormData();
+    fd.append('upload_token', uploadToken);
+    const res = await fetch('/add_column', { method: 'POST', body: fd });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw (data?.error || new Error('Erro ao adicionar coluna'));
+
+    addColumnToUI(data.column);
+    await loadEditorPage();
+    markDataDirty();
+  } catch (e) {
+    showNotice(e, 'Falha ao adicionar coluna');
+  }
+}
+
+async function deleteEditorRow(idx) {
+  if (!uploadToken) return;
+  if (!confirm('Excluir esta linha da planilha? Dá para desfazer logo em seguida.')) return;
+  try {
+    const fd = new FormData();
+    fd.append('upload_token', uploadToken);
+    fd.append('row_index', idx);
+    const res = await fetch('/delete_row', { method: 'POST', body: fd });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw (data?.error || new Error('Erro ao excluir linha'));
+
+    editorSelectedRows.delete(idx);
+    const totalPages = Math.max(1, Math.ceil(data.total_rows / editorState.pageSize));
+    if (editorState.page >= totalPages) editorState.page = totalPages - 1;
+    await loadEditorPage();
+    showEditorUndoBar();
+    markDataDirty();
+  } catch (e) {
+    showNotice(e, 'Falha ao excluir linha');
+  }
+}
+
+function removeColumnFromUI(name) {
+  ['nameCol', 'phoneCol'].forEach(id => {
+    const sel = document.getElementById(id);
+    const opt = Array.from(sel.options).find(o => o.value === name);
+    if (opt) opt.remove();
+    if (sel.value === name) sel.value = '';
+  });
+
+  selectedCols.delete(name);
+  const chip = document.querySelector(`#colChips .chip[data-col="${CSS.escape(name)}"]`);
+  if (chip) chip.remove();
+
+  if (lastConfig.name_col === name) lastConfig.name_col = '';
+  if (lastConfig.phone_col === name) lastConfig.phone_col = '';
+  if (Array.isArray(lastConfig.keep_cols)) {
+    lastConfig.keep_cols = lastConfig.keep_cols.filter(c => c !== name);
+  }
+  if (Array.isArray(lastConfig.phone_fixes)) {
+    lastConfig.phone_fixes.forEach(f => { if (f.found_col === name) f.found_col = null; });
+  }
+}
+
+async function deleteEditorColumn(name) {
+  if (!uploadToken) return;
+  if (!confirm(`Excluir a coluna "${name}"? Dá para desfazer logo em seguida.`)) return;
+  try {
+    const fd = new FormData();
+    fd.append('upload_token', uploadToken);
+    fd.append('column', name);
+    const res = await fetch('/delete_column', { method: 'POST', body: fd });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw (data?.error || new Error('Erro ao excluir coluna'));
+
+    removeColumnFromUI(name);
+    editorSelectedCols.delete(name);
+    updateEditorBulkBar();
+    showEditorUndoBar();
+    await loadEditorPage();
+    markDataDirty();
+  } catch (e) {
+    showNotice(e, 'Falha ao excluir coluna');
+  }
+}
+
+function markDataDirty() {
+  document.getElementById('dataDirtyBanner').classList.remove('hidden');
+}
+
+async function reprocessAfterEdit(btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Reprocessando…'; }
+  setProgress(0, 'Reprocessando com os dados atualizados…');
+  const r = await streamProcess(lastConfig);
+  hideProgress();
+  if (btn) { btn.disabled = false; btn.textContent = 'Reprocessar agora'; }
+  if (!r) return;
+  if (r.error) { showNotice(r.error, 'Falha ao reprocessar'); return; }
+  document.getElementById('dataDirtyBanner').classList.add('hidden');
+  showResults(r);
 }
 
 function getSplitSizes(totalRows, totalParts) {
@@ -1353,7 +2259,7 @@ function submitNativeDownload(partIndex = 1, totalParts = 1) {
 async function downloadWithFetch(partIndex = 1, totalParts = 1) {
   clearNotices();
   const fd = new FormData();
-  fd.append('file', fileEl.files[0]);
+  fd.append('file', activeFile);
   fd.append('config', JSON.stringify(lastConfig));
   fd.append('format', downloadFmt);
   fd.append('part_index', String(partIndex));
@@ -1375,7 +2281,7 @@ async function downloadWithFetch(partIndex = 1, totalParts = 1) {
   const a    = document.createElement('a');
   const contentDisposition = res.headers.get('Content-Disposition') || '';
   const match = contentDisposition.match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i);
-  const fallbackBase = (fileEl.files[0]?.name || 'arquivo').replace(/\.[^.]+$/, '');
+  const fallbackBase = (activeFile?.name || 'arquivo').replace(/\.[^.]+$/, '');
   const fallbackName = `${fallbackBase}_higienizado.${downloadFmt}`;
   const downloadName = decodeURIComponent(match?.[1] || match?.[2] || fallbackName);
   a.href = url;
@@ -1404,6 +2310,77 @@ async function doDownloadPart(partIndex, totalParts) {
   await downloadWithFetch(partIndex, totalParts);
 }
 
+function submitNativeExportReport() {
+  let iframe = document.getElementById('downloadFrame');
+  if (!iframe) {
+    iframe = document.createElement('iframe');
+    iframe.id = 'downloadFrame';
+    iframe.name = 'downloadFrame';
+    iframe.style.display = 'none';
+    document.body.appendChild(iframe);
+  }
+
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/export_report';
+  form.target = 'downloadFrame';
+  form.style.display = 'none';
+
+  const fields = { upload_token: uploadToken, config: JSON.stringify(lastConfig) };
+  Object.entries(fields).forEach(([name, value]) => {
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = name;
+    input.value = value ?? '';
+    form.appendChild(input);
+  });
+
+  document.body.appendChild(form);
+  form.submit();
+  setTimeout(() => form.remove(), 1000);
+}
+
+async function exportReportWithFetch() {
+  const fd = new FormData();
+  fd.append('file', activeFile);
+  fd.append('config', JSON.stringify(lastConfig));
+  const res = await fetch('/export_report', { method: 'POST', body: fd });
+  if (!res.ok) {
+    let errPayload = { title: 'Falha ao gerar o relatório', message: 'Erro ao exportar relatório', kind: 'error' };
+    try {
+      const data = await res.json();
+      errPayload = normalizeErrorPayload(data.error, 'Falha ao gerar o relatório');
+    } catch {}
+    showNotice(errPayload, 'Falha ao gerar o relatório');
+    return;
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const contentDisposition = res.headers.get('Content-Disposition') || '';
+  const match = contentDisposition.match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i);
+  const fallbackBase = (activeFile?.name || 'arquivo').replace(/\.[^.]+$/, '');
+  const fallbackName = `${fallbackBase}_relatorio.xlsx`;
+  a.href = url;
+  a.download = decodeURIComponent(match?.[1] || match?.[2] || fallbackName);
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
+}
+
+async function doExportReport(btn) {
+  if (btn) btn.disabled = true;
+  try {
+    if (uploadToken) {
+      submitNativeExportReport();
+    } else {
+      await exportReportWithFetch();
+    }
+  } finally {
+    if (btn) setTimeout(() => { btn.disabled = false; }, 800);
+  }
+}
+
 function setFmt(el) {
   document.querySelectorAll('.fmt-pill').forEach(p => p.classList.remove('on'));
   el.classList.add('on');
@@ -1420,6 +2397,220 @@ function toggleSplit() {
 function toggleRowRange() {
   useRowRangeEl.checked = !useRowRangeEl.checked;
   syncRowRangePanel();
+}
+
+// ── Batch (multi-list merge) ──
+function toggleBatchOrigin() {
+  const cb = document.getElementById('batchAddOrigin');
+  cb.checked = !cb.checked;
+}
+
+function addCurrentListToBatch() {
+  if (!uploadToken || !lastResultData) return;
+  batchLists.push({
+    filename: lastFileName || 'lista.xlsx',
+    upload_token: uploadToken,
+    config: lastConfig,
+    totalRows: lastProcessedTotal,
+    report: lastResultData,
+  });
+  renderBatchTray();
+
+  if (queuedFiles.length) {
+    loadFile(queuedFiles.shift());
+  } else {
+    resetWizardState();
+    document.getElementById('fileBadge').classList.add('hidden');
+    document.getElementById('batchTray').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+function renderBatchTray() {
+  const tray = document.getElementById('batchTray');
+  const chipsEl = document.getElementById('batchChips');
+  const mergeBtn = document.getElementById('btnMergeLists');
+
+  document.getElementById('batchCount').textContent = batchLists.length;
+  tray.classList.toggle('hidden', batchLists.length === 0);
+  mergeBtn.disabled = batchLists.length < 2;
+
+  chipsEl.innerHTML = batchLists.map((item, i) => `
+    <div class="batch-chip">
+      <div class="batch-chip-info">
+        <span class="batch-chip-name">${escapeHtml(item.filename)}</span>
+        <span class="batch-chip-meta">${item.totalRows} linhas finais</span>
+      </div>
+      <div class="batch-chip-actions">
+        <button type="button" class="btn btn-ghost btn-compact" onclick="openBatchReportModal(${i})">📄 Relatório</button>
+        <button type="button" class="th-icon-btn" title="Remover do lote" onclick="removeFromBatch(${i})">🗑</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function removeFromBatch(i) {
+  batchLists.splice(i, 1);
+  renderBatchTray();
+}
+
+function clearBatch() {
+  batchLists = [];
+  renderBatchTray();
+}
+
+function buildBatchSummaryHtml(data) {
+  const metrics = data.metrics || {};
+  const originalRows = metrics.original_rows ?? data.total_before ?? 0;
+  const extraRows = metrics.extra_rows_from_phone_split ?? 0;
+  const emptyRowsRemoved = metrics.empty_rows_removed ?? 0;
+  const rowsRemovedWithoutPhone = metrics.rows_removed_without_phone ?? 0;
+  const duplicatesFound = metrics.duplicates_found ?? data.dup_count ?? 0;
+  const duplicatesRemoved = metrics.duplicates_removed ?? 0;
+  const invalidPhoneEntries = metrics.invalid_phone_entries ?? 0;
+  const finalRows = metrics.final_rows ?? data.total_after ?? 0;
+  const totalRemoved = emptyRowsRemoved + rowsRemovedWithoutPhone + duplicatesRemoved;
+  return `
+    <div class="summary-hero">
+      <div class="summary-hero-item"><div class="summary-hero-val">${originalRows}</div><div class="summary-hero-key">originais</div></div>
+      <div class="summary-hero-item"><div class="summary-hero-val">${extraRows}</div><div class="summary-hero-key">expansões</div></div>
+      <div class="summary-hero-item"><div class="summary-hero-val">${totalRemoved}</div><div class="summary-hero-key">removidas</div></div>
+      <div class="summary-hero-item"><div class="summary-hero-val">${finalRows}</div><div class="summary-hero-key">finais</div></div>
+    </div>
+    <div class="summary-divider"></div>
+    <div class="summary-list">
+      <div class="summary-item">Linhas vazias removidas: <strong>${emptyRowsRemoved}</strong></div>
+      <div class="summary-item">Linhas com mais de um telefone: <strong>${metrics.rows_with_multiple_phones ?? 0}</strong></div>
+      <div class="summary-item">Entradas de telefone inválidas: <strong>${invalidPhoneEntries}</strong></div>
+      <div class="summary-item">Linhas removidas por ficar sem telefone: <strong>${rowsRemovedWithoutPhone}</strong></div>
+      <div class="summary-item">Duplicatas encontradas: <strong>${duplicatesFound}</strong>${duplicatesRemoved ? ` (removidas: <strong>${duplicatesRemoved}</strong>)` : ''}</div>
+    </div>`;
+}
+
+function openBatchReportModal(i) {
+  const item = batchLists[i];
+  if (!item) return;
+  document.getElementById('batchReportTitle').textContent = `📄 Relatório — ${item.filename}`;
+  document.getElementById('batchReportBody').innerHTML = item.report
+    ? buildBatchSummaryHtml(item.report)
+    : '<p>Relatório indisponível.</p>';
+  document.getElementById('batchReportModal').classList.add('open');
+}
+
+function closeBatchReportModal() {
+  document.getElementById('batchReportModal').classList.remove('open');
+}
+
+function renderMergeRecap(summaries) {
+  const box = document.getElementById('mergeRecapBox');
+  if (!summaries || !summaries.length) {
+    box.classList.add('hidden');
+    box.innerHTML = '';
+    return;
+  }
+  box.innerHTML = `
+    <div class="merge-recap-title">🗂 ${summaries.length} listas combinadas</div>
+    ${summaries.map(s => `<div class="merge-recap-item">${escapeHtml(s.filename)}: ${s.metrics?.original_rows ?? '?'} → ${s.total_rows} linhas</div>`).join('')}
+  `;
+  box.classList.remove('hidden');
+}
+
+function applyMergeResult(data, listCount) {
+  resetWizardState();
+  activeFile = null;
+  lastFileName = 'lista-combinada.xlsx';
+  uploadToken = data.upload_token;
+  lastConfig = data.config || {};
+  renderMergeRecap(data.per_list_summary || []);
+
+  const badge = document.getElementById('fileBadge');
+  badge.innerHTML = `<div class="file-badge">🔗 Lista combinada — ${listCount} listas · ${data.total_after} linhas · ${data.columns_after.length} colunas</div>`;
+  badge.classList.remove('hidden');
+  document.getElementById('b1').classList.add('done');
+  document.getElementById('b1').textContent = '✓';
+  document.getElementById('b2').classList.remove('dim');
+  document.getElementById('b2').classList.add('done');
+  document.getElementById('b2').textContent = '✓';
+
+  showResults(data);
+}
+
+async function doMerge() {
+  if (batchLists.length < 2) return;
+  const btn = document.getElementById('btnMergeLists');
+  const originalLabel = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> Juntando…';
+  clearNotices();
+
+  const addOrigin = document.getElementById('batchAddOrigin').checked;
+  const originName = document.getElementById('batchOriginName').value.trim() || 'lista_origem';
+  const entries = batchLists.map(item => ({
+    upload_token: item.upload_token,
+    filename: item.filename,
+    config: item.config,
+  }));
+  const listCount = batchLists.length;
+
+  async function runMerge(dupAction) {
+    const fd = new FormData();
+    fd.append('entries', JSON.stringify(entries));
+    fd.append('add_origin_column', addOrigin ? '1' : '0');
+    fd.append('origin_column_name', originName);
+    fd.append('dup_action', dupAction);
+    const res = await fetch('/merge_lists', { method: 'POST', body: fd });
+    return res.json();
+  }
+
+  let data;
+  try {
+    data = await runMerge('keep');
+  } catch (e) {
+    btn.disabled = false;
+    btn.innerHTML = originalLabel;
+    showNotice({
+      title: 'Sem conexão com o servidor',
+      message: 'Não foi possível juntar as listas.',
+      hint: 'Confirme se a aplicação está rodando e tente novamente.',
+      kind: 'error',
+    });
+    return;
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = originalLabel;
+
+  if (data.error) {
+    showNotice(data.error, 'Falha ao juntar as listas');
+    return;
+  }
+
+  batchLists = [];
+  renderBatchTray();
+  applyMergeResult(data, listCount);
+
+  if (data.dup_count > 0) {
+    document.getElementById('dupMsg').textContent =
+      `Foram encontradas ${data.dup_count} linha(s) duplicada(s) entre as listas. O que deseja fazer?`;
+    document.getElementById('dupModal').classList.add('open');
+    dupResolve = async (action) => {
+      document.getElementById('dupModal').classList.remove('open');
+      if (action !== 'remove') return;
+      let data2;
+      try {
+        data2 = await runMerge('remove');
+      } catch (e) {
+        showNotice({
+          title: 'Sem conexão com o servidor',
+          message: 'Não foi possível remover as duplicatas entre as listas.',
+          hint: 'Confirme se a aplicação está rodando e tente novamente.',
+          kind: 'error',
+        });
+        return;
+      }
+      if (data2.error) { showNotice(data2.error, 'Falha ao juntar as listas'); return; }
+      applyMergeResult(data2, listCount);
+    };
+  }
 }
 </script>
 </body>
